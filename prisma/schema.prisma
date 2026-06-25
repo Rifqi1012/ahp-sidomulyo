@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Branch {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  address   String?  @db.Text
+  isPusat   Boolean  @default(false) @map("is_pusat")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  departments Department[]
+  users       User[]
+
+  @@map("branches")
+}
+
+model Department {
+  id        Int      @id @default(autoincrement())
+  branchId  Int      @map("branch_id")
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  users  User[]
+
+  @@unique([branchId, name])
+  @@map("departments")
+}
+
+model Jabatan {
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(100)
+  level       KpiLevel?
+  scope       ScopeType
+  roleSystem  RoleType  @map("role_system")
+  description String?   @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  users User[]
+
+  @@map("jabatan")
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  name         String    @db.VarChar(150)
+  email        String    @unique @db.VarChar(150)
+  password     String
+  role         RoleType
+  branchId     Int?      @map("branch_id")
+  departmentId Int?      @map("department_id")
+  jabatanId    Int?      @map("jabatan_id")
+  nik          String?   @unique @db.VarChar(20)
+  hireDate     DateTime? @map("hire_date") @db.Date
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  branch     Branch?     @relation(fields: [branchId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+  jabatan    Jabatan?    @relation(fields: [jabatanId], references: [id])
+
+  periodsCreated      Period[]               @relation("PeriodCreatedBy")
+  assessmentsGiven    Assessment[]           @relation("AssessorAssessments")
+  assessmentsReceived Assessment[]           @relation("AssesseeAssessments")
+  finalScores         AssessmentFinalScore[]
+  kpiVersions         KpiTemplate[]
+
+  @@map("users")
+}
+
+model Period {
+  id                Int          @id @default(autoincrement())
+  name              String       @db.VarChar(100)
+  startDate         DateTime     @map("start_date") @db.Date
+  endDate           DateTime     @map("end_date") @db.Date
+  deadlinePenilaian DateTime     @map("deadline_penilaian") @db.Date
+  status            PeriodStatus @default(DRAFT)
+  createdBy         Int          @map("created_by")
+  kpiAtasId         Int?         @map("kpi_atas_id")
+  kpiBawahId        Int?         @map("kpi_bawah_id")
+  cycleGroup        String?      @map("cycle_group")
+  cycleOrder        Int?         @map("cycle_order")
+  isAutoCycle       Boolean      @default(false) @map("is_auto_cycle")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  creator  User         @relation("PeriodCreatedBy", fields: [createdBy], references: [id])
+  kpiAtas  KpiTemplate? @relation("PeriodKpiAtas", fields: [kpiAtasId], references: [id])
+  kpiBawah KpiTemplate? @relation("PeriodKpiBawah", fields: [kpiBawahId], references: [id])
+
+  assessments Assessment[]
+  finalScores AssessmentFinalScore[]
+
+  @@map("periods")
+}
+
+model CycleSetting {
+  id         Int      @id @default(autoincrement())
+  cycleGroup String   @unique @map("cycle_group")
+  isComplete Boolean  @default(false) @map("is_complete")
+  createdBy  Int      @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("cycle_settings")
+}
+
+model KpiTemplate {
+  id        Int      @id @default(autoincrement())
+  type      KpiType
+  version   Int      @default(1)
+  isCurrent Boolean  @default(true) @map("is_current")
+  createdBy Int      @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  creator  User          @relation(fields: [createdBy], references: [id])
+  criteria KpiCriteria[]
+
+  assessments    Assessment[]
+  periodsAsAtas  Period[]     @relation("PeriodKpiAtas")
+  periodsAsBawah Period[]     @relation("PeriodKpiBawah")
+
+  @@map("kpi_templates")
+}
+
+model KpiCriteria {
+  id            Int      @id @default(autoincrement())
+  kpiTemplateId Int      @map("kpi_template_id")
+  name          String   @db.VarChar(150)
+  bobotPersen   Decimal  @map("bobot_persen") @db.Decimal(5, 2)
+  ahpWeight     Decimal  @map("ahp_weight") @db.Decimal(10, 6)
+  orderNumber   Int      @default(1) @map("order_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  template    KpiTemplate      @relation(fields: [kpiTemplateId], references: [id])
+  subcriteria KpiSubcriteria[]
+
+  @@map("kpi_criteria")
+}
+
+model KpiSubcriteria {
+  id            Int      @id @default(autoincrement())
+  kpiCriteriaId Int      @map("kpi_criteria_id")
+  name          String   @db.VarChar(255)
+  description   String?  @db.Text
+  bobotPersen   Decimal  @map("bobot_persen") @db.Decimal(5, 2)
+  ahpWeight     Decimal  @map("ahp_weight") @db.Decimal(10, 6)
+  orderNumber   Int      @default(1) @map("order_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  criteria          KpiCriteria        @relation(fields: [kpiCriteriaId], references: [id])
+  assessmentDetails AssessmentDetail[]
+
+  @@map("kpi_subcriteria")
+}
+
+model Assessment {
+  id            Int              @id @default(autoincrement())
+  periodId      Int              @map("period_id")
+  assessorId    Int              @map("assessor_id")
+  assesseeId    Int              @map("assessee_id")
+  kpiTemplateId Int              @map("kpi_template_id")
+  weightPct     Int              @map("weight_pct")
+  totalScore    Decimal?         @map("total_score") @db.Decimal(10, 4)
+  status        AssessmentStatus @default(DRAFT)
+  submittedAt   DateTime?        @map("submitted_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  period      Period      @relation(fields: [periodId], references: [id])
+  assessor    User        @relation("AssessorAssessments", fields: [assessorId], references: [id])
+  assessee    User        @relation("AssesseeAssessments", fields: [assesseeId], references: [id])
+  kpiTemplate KpiTemplate @relation(fields: [kpiTemplateId], references: [id])
+
+  details AssessmentDetail[]
+
+  @@unique([periodId, assessorId, assesseeId])
+  @@map("assessments")
+}
+
+model AssessmentDetail {
+  id               Int      @id @default(autoincrement())
+  assessmentId     Int      @map("assessment_id")
+  kpiSubcriteriaId Int      @map("kpi_subcriteria_id")
+  score            Int
+  weightedScore    Decimal  @map("weighted_score") @db.Decimal(10, 6)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  assessment     Assessment     @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  kpiSubcriteria KpiSubcriteria @relation(fields: [kpiSubcriteriaId], references: [id])
+
+  @@map("assessment_details")
+}
+
+model AssessmentFinalScore {
+  id           Int       @id @default(autoincrement())
+  periodId     Int       @map("period_id")
+  assesseeId   Int       @map("assessee_id")
+  finalScore   Decimal?  @map("final_score") @db.Decimal(10, 4)
+  isComplete   Boolean   @default(false) @map("is_complete")
+  calculatedAt DateTime? @map("calculated_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  period   Period @relation(fields: [periodId], references: [id])
+  assessee User   @relation(fields: [assesseeId], references: [id])
+
+  @@unique([periodId, assesseeId])
+  @@map("assessment_final_scores")
+}
+
+enum RoleType {
+  admin
+  direktur
+  hrd
+  kepala_cabang
+  kepala_divisi
+  karyawan
+}
+
+enum KpiLevel {
+  atas
+  bawah
+}
+
+enum ScopeType {
+  pusat
+  cabang
+  all
+}
+
+enum KpiType {
+  atas
+  bawah
+}
+
+enum PeriodStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum AssessmentStatus {
+  DRAFT
+  SUBMITTED
+}
