@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import type { Branch, Department, Jabatan, User } from "@prisma/client";
 
 import prisma from "@/lib/prisma";
-import { isAdmin } from "@/lib/auth-guard";
+import { isAdmin, getSessionUser } from "@/lib/auth-guard";
+import type { Prisma, RoleType } from "@prisma/client";
 import {
   createEmployeeAccount,
   resetUserPassword,
@@ -271,4 +272,154 @@ export async function toggleActive(id: number): Promise<ActionResult> {
   revalidatePath("/admin/karyawan");
   revalidatePath("/admin/users");
   return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// READ-ONLY: Lihat Karyawan (HRD / Kepala Cabang / Kepala Divisi)
+// ---------------------------------------------------------------------------
+
+export type EmployeeViewFilter = {
+  search?: string;
+  branchId?: number;
+  departmentId?: number;
+  jabatanId?: number;
+  role?: RoleType;
+  isActive?: boolean;
+  page?: number;
+  sortBy?: "name" | "branch" | "jabatan" | "department" | "status";
+  sortOrder?: "asc" | "desc";
+};
+
+export type EmployeeViewResult = {
+  data: EmployeeWithRelations[];
+  total: number;
+};
+
+function buildOrderBy(
+  sortBy?: string,
+  sortOrder?: "asc" | "desc",
+): Prisma.UserOrderByWithRelationInput {
+  const dir: "asc" | "desc" = sortOrder === "desc" ? "desc" : "asc";
+  switch (sortBy) {
+    case "branch":
+      return { branch: { name: dir } };
+    case "jabatan":
+      return { jabatan: { name: dir } };
+    case "department":
+      return { department: { name: dir } };
+    case "status":
+      return { isActive: dir };
+    case "name":
+    default:
+      return { name: dir };
+  }
+}
+
+async function queryEmployees(
+  where: Prisma.UserWhereInput,
+  filter: EmployeeViewFilter,
+): Promise<EmployeeViewResult> {
+  const page = Math.max(1, filter.page ?? 1);
+  const [total, data] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      include: { branch: true, department: true, jabatan: true },
+      orderBy: buildOrderBy(filter.sortBy, filter.sortOrder),
+      skip: (page - 1) * EMPLOYEE_PAGE_SIZE,
+      take: EMPLOYEE_PAGE_SIZE,
+    }),
+  ]);
+  return { data, total };
+}
+
+/** HRD: semua karyawan kecuali admin & direktur. */
+export async function getEmployeesForHrd(
+  filter: EmployeeViewFilter,
+): Promise<EmployeeViewResult> {
+  const user = await getSessionUser();
+  if (user?.role !== "hrd") return { data: [], total: 0 };
+
+  const where: Prisma.UserWhereInput = {
+    role: filter.role ? filter.role : { notIn: ["admin", "direktur"] },
+    ...(filter.search ? { name: { contains: filter.search } } : {}),
+    ...(filter.branchId ? { branchId: filter.branchId } : {}),
+    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
+    ...(filter.jabatanId ? { jabatanId: filter.jabatanId } : {}),
+    ...(filter.isActive !== undefined ? { isActive: filter.isActive } : {}),
+  };
+  return queryEmployees(where, filter);
+}
+
+/** Kepala Cabang: karyawan di cabang yang sama (KD & Karyawan saja). */
+export async function getEmployeesForKc(
+  branchId: number,
+  filter: EmployeeViewFilter,
+): Promise<EmployeeViewResult> {
+  const user = await getSessionUser();
+  if (user?.role !== "kepala_cabang" || user.branchId !== branchId) {
+    return { data: [], total: 0 };
+  }
+
+  const where: Prisma.UserWhereInput = {
+    branchId,
+    role: filter.role ? filter.role : { in: ["kepala_divisi", "karyawan"] },
+    ...(filter.search ? { name: { contains: filter.search } } : {}),
+    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
+    ...(filter.jabatanId ? { jabatanId: filter.jabatanId } : {}),
+    ...(filter.isActive !== undefined ? { isActive: filter.isActive } : {}),
+  };
+  return queryEmployees(where, filter);
+}
+
+/** Kepala Divisi: karyawan di cabang & departemen yang sama. */
+export async function getEmployeesForKd(
+  branchId: number,
+  departmentId: number,
+  filter: EmployeeViewFilter,
+): Promise<EmployeeViewResult> {
+  const user = await getSessionUser();
+  if (
+    user?.role !== "kepala_divisi" ||
+    user.branchId !== branchId ||
+    user.departmentId !== departmentId
+  ) {
+    return { data: [], total: 0 };
+  }
+
+  const where: Prisma.UserWhereInput = {
+    branchId,
+    departmentId,
+    role: "karyawan",
+    ...(filter.search ? { name: { contains: filter.search } } : {}),
+    ...(filter.jabatanId ? { jabatanId: filter.jabatanId } : {}),
+    ...(filter.isActive !== undefined ? { isActive: filter.isActive } : {}),
+  };
+  return queryEmployees(where, filter);
+}
+
+/** Detail satu karyawan dengan validasi scope per role. */
+export async function getEmployeeDetail(
+  id: number,
+  requestorRole: string,
+  requestorBranchId?: number | null,
+  requestorDeptId?: number | null,
+): Promise<EmployeeWithRelations | null> {
+  const employee = await prisma.user.findUnique({
+    where: { id },
+    include: { branch: true, department: true, jabatan: true },
+  });
+  if (!employee) return null;
+
+  if (requestorRole === "hrd") return employee;
+  if (requestorRole === "kepala_cabang") {
+    return employee.branchId === requestorBranchId ? employee : null;
+  }
+  if (requestorRole === "kepala_divisi") {
+    return employee.branchId === requestorBranchId &&
+      employee.departmentId === requestorDeptId
+      ? employee
+      : null;
+  }
+  return null;
 }

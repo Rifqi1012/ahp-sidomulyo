@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { getJabatanById } from "@/app/actions/jabatan";
+import { getBranches } from "@/app/actions/branch";
+import { getDepartments } from "@/app/actions/department";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { JabatanForm } from "@/components/admin/JabatanForm";
 
@@ -14,8 +16,19 @@ export default async function EditJabatanPage({
   const id = Number(params.id);
   if (Number.isNaN(id)) notFound();
 
-  const jabatan = await getJabatanById(id);
+  const [jabatan, branches, departments] = await Promise.all([
+    getJabatanById(id),
+    getBranches(),
+    getDepartments(),
+  ]);
   if (!jabatan) notFound();
+
+  const branchOptions = branches
+    .filter((b) => b.isActive)
+    .map((b) => ({ id: b.id, name: b.name, isPusat: b.isPusat }));
+  const deptOptions = departments
+    .filter((d) => d.isActive || d.id === jabatan.departmentId)
+    .map((d) => ({ id: d.id, name: d.name, branchId: d.branchId }));
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -27,11 +40,14 @@ export default async function EditJabatanPage({
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <JabatanForm
           mode="edit"
+          branches={branchOptions}
+          departments={deptOptions}
           jabatan={{
             id: jabatan.id,
             name: jabatan.name,
+            departmentId: jabatan.departmentId,
+            branchId: jabatan.branchId,
             level: jabatan.level,
-            scope: jabatan.scope,
             roleSystem: jabatan.roleSystem,
             description: jabatan.description,
             isActive: jabatan.isActive,

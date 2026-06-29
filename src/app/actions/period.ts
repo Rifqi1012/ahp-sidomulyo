@@ -439,6 +439,7 @@ export async function savePeriodRow(
     await prisma.period.update({
       where: { id: existing.id },
       data: {
+        name: simplePeriodName(order, validated.start.getUTCFullYear()),
         startDate: validated.start,
         endDate: validated.end,
         deadlinePenilaian: computeDeadline(validated.start),
@@ -447,7 +448,7 @@ export async function savePeriodRow(
   } else {
     await prisma.period.create({
       data: {
-        name: simplePeriodName(order),
+        name: simplePeriodName(order, validated.start.getUTCFullYear()),
         startDate: validated.start,
         endDate: validated.end,
         deadlinePenilaian: computeDeadline(validated.start),

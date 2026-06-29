@@ -1,7 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { Jabatan, KpiLevel, ScopeType, RoleType } from "@prisma/client";
+import type {
+  Branch,
+  Department,
+  Jabatan,
+  KpiLevel,
+  RoleType,
+} from "@prisma/client";
 
 import prisma from "@/lib/prisma";
 import { isAdmin } from "@/lib/auth-guard";
@@ -9,34 +15,52 @@ import type { ActionResult } from "@/app/actions/branch";
 
 export type { ActionResult };
 
-export type JabatanWithCount = Jabatan & { activeUserCount: number };
+export type JabatanWithRelations = Jabatan & {
+  department: Department | null;
+  branch: Branch | null;
+  activeUserCount: number;
+};
+
+export type JabatanFilter = {
+  branchId?: number;
+  departmentId?: number;
+  roleSystem?: RoleType;
+  isActive?: boolean;
+};
 
 export type JabatanInput = {
   name: string;
+  departmentId: number | null;
+  branchId: number | null;
   level: KpiLevel | null;
-  scope: ScopeType;
   roleSystem: RoleType;
   description?: string | null;
 };
 
 export type JabatanUpdateInput = {
   name: string;
+  departmentId: number | null;
+  branchId: number | null;
   level: KpiLevel | null;
-  scope: ScopeType;
   description?: string | null;
   isActive: boolean;
 };
 
-/** Daftar jabatan + jumlah pemegang aktif, opsional difilter scope. */
+/** Daftar jabatan + jumlah pemegang aktif, dengan filter opsional. */
 export async function getJabatan(
-  scope?: ScopeType,
-): Promise<JabatanWithCount[]> {
+  filter: JabatanFilter = {},
+): Promise<JabatanWithRelations[]> {
   const jabatanList = await prisma.jabatan.findMany({
-    where: scope ? { scope } : undefined,
-    orderBy: [{ scope: "asc" }, { name: "asc" }],
+    where: {
+      ...(filter.branchId ? { branchId: filter.branchId } : {}),
+      ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
+      ...(filter.roleSystem ? { roleSystem: filter.roleSystem } : {}),
+      ...(filter.isActive !== undefined ? { isActive: filter.isActive } : {}),
+    },
+    include: { department: true, branch: true },
+    orderBy: [{ branchId: "asc" }, { name: "asc" }],
   });
 
-  // Hitung user aktif per jabatan.
   const grouped = await prisma.user.groupBy({
     by: ["jabatanId"],
     where: { isActive: true, jabatanId: { not: null } },
@@ -54,13 +78,39 @@ export async function getJabatan(
   }));
 }
 
-export async function getJabatanById(id: number): Promise<Jabatan | null> {
-  return prisma.jabatan.findUnique({ where: { id } });
+export async function getJabatanById(
+  id: number,
+): Promise<JabatanWithRelations | null> {
+  const j = await prisma.jabatan.findUnique({
+    where: { id },
+    include: { department: true, branch: true },
+  });
+  if (!j) return null;
+  const count = await prisma.user.count({
+    where: { jabatanId: id, isActive: true },
+  });
+  return { ...j, activeUserCount: count };
 }
 
-export async function createJabatan(
-  data: JabatanInput,
-): Promise<ActionResult> {
+/** Cek keunikan nama per kombinasi (departemen + cabang). */
+async function isDuplicate(
+  name: string,
+  departmentId: number | null,
+  branchId: number | null,
+  excludeId?: number,
+): Promise<boolean> {
+  const dup = await prisma.jabatan.findFirst({
+    where: {
+      name,
+      departmentId: departmentId ?? null,
+      branchId: branchId ?? null,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+  });
+  return dup !== null;
+}
+
+export async function createJabatan(data: JabatanInput): Promise<ActionResult> {
   if (!(await isAdmin())) {
     return { success: false, error: "Anda tidak memiliki akses." };
   }
@@ -74,11 +124,22 @@ export async function createJabatan(
     };
   }
 
+  if (await isDuplicate(name, data.departmentId, data.branchId)) {
+    return {
+      success: false,
+      error: "Jabatan ini sudah ada untuk departemen dan cabang yang dipilih.",
+      fieldErrors: {
+        name: "Jabatan ini sudah ada untuk departemen dan cabang yang dipilih.",
+      },
+    };
+  }
+
   await prisma.jabatan.create({
     data: {
       name,
+      departmentId: data.departmentId,
+      branchId: data.branchId,
       level: data.level,
-      scope: data.scope,
       roleSystem: data.roleSystem,
       description: data.description?.trim() || null,
       isActive: true,
@@ -111,13 +172,24 @@ export async function updateJabatan(
     };
   }
 
+  if (await isDuplicate(name, data.departmentId, data.branchId, id)) {
+    return {
+      success: false,
+      error: "Jabatan ini sudah ada untuk departemen dan cabang yang dipilih.",
+      fieldErrors: {
+        name: "Jabatan ini sudah ada untuk departemen dan cabang yang dipilih.",
+      },
+    };
+  }
+
   // roleSystem TIDAK pernah diubah dari sini (diblokir).
   await prisma.jabatan.update({
     where: { id },
     data: {
       name,
+      departmentId: data.departmentId,
+      branchId: data.branchId,
       level: data.level,
-      scope: data.scope,
       description: data.description?.trim() || null,
       isActive: data.isActive,
     },
@@ -144,7 +216,7 @@ export async function deleteJabatan(id: number): Promise<ActionResult> {
   if (activeUsers > 0) {
     return {
       success: false,
-      error: `Tidak dapat menonaktifkan: masih ada ${activeUsers} karyawan aktif dengan jabatan ini.`,
+      error: `Jabatan masih digunakan oleh ${activeUsers} karyawan aktif.`,
     };
   }
 

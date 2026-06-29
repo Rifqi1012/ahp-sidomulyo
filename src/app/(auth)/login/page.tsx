@@ -4,6 +4,7 @@ import { Suspense, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, getSession } from "next-auth/react";
 import { Loader2 } from "lucide-react";
+import Logo from "@/assets/logo.png"
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getDashboardUrl } from "@/lib/getDashboardUrl";
+import Image from "next/image";
 
 function LoginForm() {
   const router = useRouter();
@@ -53,7 +55,8 @@ function LoginForm() {
 
   return (
     <Card className="w-full max-w-md rounded-xl shadow-sm">
-        <CardHeader className="space-y-2 text-center">
+        <CardHeader className="space-y-2 text-center flex flex-col justify-center items-center">
+          <Image src={Logo} alt="Logo PT Sidomulyo Selaras" className="w-24"/>
           <h1 className="text-xl font-semibold text-foreground">
             PT Sidomulyo Selaras
           </h1>

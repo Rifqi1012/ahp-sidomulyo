@@ -17,20 +17,20 @@ import {
 import { DataTable, type Column } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
-import { levelBadge, SCOPE_BADGE, roleLabel } from "@/lib/labels";
+import { levelBadge, roleLabel } from "@/lib/labels";
 import {
   deleteJabatan,
-  type JabatanWithCount,
+  type JabatanWithRelations,
 } from "@/app/actions/jabatan";
 
 type JabatanTableProps = {
-  jabatan: JabatanWithCount[];
+  jabatan: JabatanWithRelations[];
 };
 
 export function JabatanTable({ jabatan }: JabatanTableProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [target, setTarget] = useState<JabatanWithCount | null>(null);
+  const [target, setTarget] = useState<JabatanWithRelations | null>(null);
 
   function handleConfirm() {
     if (!target) return;
@@ -46,12 +46,27 @@ export function JabatanTable({ jabatan }: JabatanTableProps) {
     });
   }
 
-  const columns: Column<JabatanWithCount>[] = [
+  const columns: Column<JabatanWithRelations>[] = [
     {
       header: "Nama",
       cell: (row) => (
         <span className="font-medium text-slate-900">{row.name}</span>
       ),
+    },
+    {
+      header: "Departemen",
+      cell: (row) => (
+        <span className="text-slate-600">{row.department?.name ?? "—"}</span>
+      ),
+    },
+    {
+      header: "Cabang",
+      cell: (row) =>
+        row.branchId === null ? (
+          <Badge variant="blue">Semua Cabang</Badge>
+        ) : (
+          <span className="text-slate-600">{row.branch?.name ?? "—"}</span>
+        ),
     },
     {
       header: "Level KPI",
@@ -65,13 +80,6 @@ export function JabatanTable({ jabatan }: JabatanTableProps) {
       cell: (row) => (
         <span className="text-slate-600">{roleLabel(row.roleSystem)}</span>
       ),
-    },
-    {
-      header: "Scope",
-      cell: (row) => {
-        const cfg = SCOPE_BADGE[row.scope];
-        return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
-      },
     },
     {
       header: "Pemegang",
@@ -134,7 +142,7 @@ export function JabatanTable({ jabatan }: JabatanTableProps) {
         emptyMessage={
           <div className="flex flex-col items-center gap-2 py-4">
             <Inbox className="h-8 w-8 text-slate-300" />
-            <span>Belum ada jabatan pada kategori ini.</span>
+            <span>Tidak ada jabatan untuk filter ini.</span>
           </div>
         }
       />

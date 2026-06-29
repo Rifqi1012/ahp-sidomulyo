@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import type { RoleType } from "@prisma/client";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -28,12 +29,15 @@ type UserFormProps = {
     role: RoleType;
     isActive: boolean;
   };
+  isProtected?: boolean;
 };
 
-export function UserForm({ user }: UserFormProps) {
+export function UserForm({ user, isProtected = false }: UserFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
   const [role, setRole] = useState<string>(user.role);
   const [isActive, setIsActive] = useState(user.isActive);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -44,6 +48,8 @@ export function UserForm({ user }: UserFormProps) {
 
     startTransition(async () => {
       const result = await updateUser(user.id, {
+        name,
+        email,
         role: role as RoleType,
         isActive,
       });
@@ -60,20 +66,46 @@ export function UserForm({ user }: UserFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
-        <div className="flex gap-2">
-          <span className="w-16 text-slate-500">Nama</span>
-          <span className="font-medium text-slate-900">{user.name}</span>
-        </div>
-        <div className="mt-1 flex gap-2">
-          <span className="w-16 text-slate-500">Email</span>
-          <span className="font-medium text-slate-900">{user.email}</span>
-        </div>
+      <div className="space-y-2">
+        <Label htmlFor="name">Nama</Label>
+        <Input
+          id="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={150}
+          disabled={isPending}
+        />
+        {fieldErrors.name && (
+          <p className="text-sm text-destructive">{fieldErrors.name}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={isPending || isProtected}
+        />
+        <p className="text-xs text-slate-400">
+          {isProtected
+            ? "Email akun Admin utama tidak dapat diubah."
+            : "Email digunakan untuk login ke sistem."}
+        </p>
+        {fieldErrors.email && (
+          <p className="text-sm text-destructive">{fieldErrors.email}</p>
+        )}
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="role">Role</Label>
-        <Select value={role} onValueChange={setRole} disabled={isPending}>
+        <Select
+          value={role}
+          onValueChange={setRole}
+          disabled={isPending || isProtected}
+        >
           <SelectTrigger id="role">
             <SelectValue placeholder="Pilih role" />
           </SelectTrigger>
@@ -103,7 +135,7 @@ export function UserForm({ user }: UserFormProps) {
         <Switch
           checked={isActive}
           onCheckedChange={setIsActive}
-          disabled={isPending}
+          disabled={isPending || isProtected}
         />
       </div>
 

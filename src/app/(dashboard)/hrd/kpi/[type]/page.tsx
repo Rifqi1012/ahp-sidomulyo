@@ -8,11 +8,11 @@ export const dynamic = "force-dynamic";
 
 const META: Record<KpiType, { title: string; info: string }> = {
   atas: {
-    title: "Setup KPI Jabatan Atas",
+    title: "Setup KPI Pengawas",
     info: "Digunakan untuk menilai Kepala Cabang dan Kepala Divisi.",
   },
   bawah: {
-    title: "Setup KPI Jabatan Bawah",
+    title: "Setup KPI Pelaksana",
     info: "Digunakan untuk menilai Karyawan.",
   },
 };

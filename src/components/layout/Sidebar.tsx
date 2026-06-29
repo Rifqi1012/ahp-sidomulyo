@@ -4,9 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { LogOut, X } from "lucide-react";
+import Logo from "@/assets/logo.png";
 
 import { cn } from "@/lib/utils";
 import { getNavItems, ROLE_LABELS } from "@/lib/navigation";
+import Image from "next/image";
 
 export type SidebarUser = {
   name: string;
@@ -53,8 +55,8 @@ export function Sidebar({ user, open, onClose }: SidebarProps) {
         {/* Logo area */}
         <div className="flex items-center justify-between px-5 py-5">
           <div>
-            <p className="text-sm font-medium text-white">
-              PT Sidomulyo Selaras
+            <p className="text-sm font-medium text-white flex gap-2 items-center">
+              <Image src={Logo} alt={"Logo PT Sidomulyo Selaras"} className="w-12" /> PT Sidomulyo Selaras
             </p>
             <p className="text-xs text-slate-400">Sistem Penilaian Kinerja</p>
           </div>

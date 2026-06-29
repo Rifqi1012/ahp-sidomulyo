@@ -1,7 +1,7 @@
-import { HasilList } from "@/components/assessment/HasilList";
+import { HasilSayaIndex } from "@/components/hasil-penilaian/HasilSayaIndex";
 
 export const dynamic = "force-dynamic";
 
 export default function Page() {
-  return <HasilList basePath="/kepala-divisi" />;
+  return <HasilSayaIndex basePath="/kepala-divisi" />;
 }

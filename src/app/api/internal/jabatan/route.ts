@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import type { ScopeType } from "@prisma/client";
 
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth-guard";
@@ -11,25 +10,47 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const scopeParam = req.nextUrl.searchParams.get("scope");
+  const params = req.nextUrl.searchParams;
+  const branchIdParam = params.get("branchId");
+  const departmentIdParam = params.get("departmentId");
+  const branchId = branchIdParam ? Number(branchIdParam) : undefined;
+  const departmentId = departmentIdParam ? Number(departmentIdParam) : undefined;
 
-  // Untuk cabang pusat -> jabatan scope 'pusat' & 'all'.
-  // Untuk cabang biasa -> jabatan scope 'cabang' & 'all'.
-  let scopeFilter: ScopeType[] | undefined;
-  if (scopeParam === "pusat") scopeFilter = ["pusat", "all"];
-  else if (scopeParam === "cabang") scopeFilter = ["cabang", "all"];
-  else if (scopeParam) {
-    return NextResponse.json({ error: "scope tidak valid" }, { status: 400 });
+  if (
+    (branchIdParam && Number.isNaN(branchId)) ||
+    (departmentIdParam && Number.isNaN(departmentId))
+  ) {
+    return NextResponse.json({ error: "Parameter tidak valid" }, { status: 400 });
   }
 
+  // Jabatan cocok jika:
+  //  (branchId = cabang dipilih ATAU branchId null) DAN
+  //  (departmentId = dept dipilih ATAU departmentId null).
   const jabatan = await prisma.jabatan.findMany({
     where: {
       isActive: true,
-      ...(scopeFilter ? { scope: { in: scopeFilter } } : {}),
+      AND: [
+        { OR: [{ branchId: branchId ?? undefined }, { branchId: null }] },
+        {
+          OR: [
+            { departmentId: departmentId ?? undefined },
+            { departmentId: null },
+          ],
+        },
+      ],
     },
-    select: { id: true, name: true, scope: true, level: true, roleSystem: true },
+    include: { department: true, branch: true },
     orderBy: { name: "asc" },
   });
 
-  return NextResponse.json({ jabatan });
+  return NextResponse.json({
+    jabatan: jabatan.map((j) => ({
+      id: j.id,
+      name: j.name,
+      level: j.level,
+      roleSystem: j.roleSystem,
+      department: j.department ? { name: j.department.name } : null,
+      branch: j.branch ? { name: j.branch.name } : null,
+    })),
+  });
 }

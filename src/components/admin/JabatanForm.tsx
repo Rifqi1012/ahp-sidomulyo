@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import type { KpiLevel, RoleType, ScopeType } from "@prisma/client";
+import type { KpiLevel, RoleType } from "@prisma/client";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,13 +27,19 @@ import {
   type ActionResult,
 } from "@/app/actions/jabatan";
 
+type BranchOption = { id: number; name: string; isPusat: boolean };
+type DeptOption = { id: number; name: string; branchId: number };
+
 type JabatanFormProps = {
   mode: "create" | "edit";
+  branches: BranchOption[];
+  departments: DeptOption[];
   jabatan?: {
     id: number;
     name: string;
+    departmentId: number | null;
+    branchId: number | null;
     level: KpiLevel | null;
-    scope: ScopeType;
     roleSystem: RoleType;
     description: string | null;
     isActive: boolean;
@@ -41,20 +47,47 @@ type JabatanFormProps = {
 };
 
 const LEVEL_NONE = "none";
+const BRANCH_ALL = "all";
+const DEPT_NONE = "none";
 
-export function JabatanForm({ mode, jabatan }: JabatanFormProps) {
+export function JabatanForm({
+  mode,
+  branches,
+  departments,
+  jabatan,
+}: JabatanFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const [name, setName] = useState(jabatan?.name ?? "");
+  const [departmentId, setDepartmentId] = useState<string>(
+    jabatan?.departmentId ? String(jabatan.departmentId) : DEPT_NONE,
+  );
+  const [branchValue, setBranchValue] = useState<string>(
+    jabatan
+      ? jabatan.branchId === null
+        ? BRANCH_ALL
+        : String(jabatan.branchId)
+      : "",
+  );
   const [level, setLevel] = useState<string>(jabatan?.level ?? LEVEL_NONE);
-  const [scope, setScope] = useState<ScopeType>(jabatan?.scope ?? "pusat");
   const [roleSystem, setRoleSystem] = useState<string>(
     jabatan?.roleSystem ?? "",
   );
   const [description, setDescription] = useState(jabatan?.description ?? "");
   const [isActive, setIsActive] = useState(jabatan?.isActive ?? true);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const isSpecificBranch = branchValue !== "" && branchValue !== BRANCH_ALL;
+  const branchDepartments = isSpecificBranch
+    ? departments.filter((d) => String(d.branchId) === branchValue)
+    : [];
+
+  // Ganti cabang → reset departemen (departemen tergantung cabang).
+  function handleBranchChange(value: string) {
+    setBranchValue(value);
+    setDepartmentId(DEPT_NONE);
+  }
 
   function handleResult(result: ActionResult, msg: string) {
     if (result.success) {
@@ -71,7 +104,15 @@ export function JabatanForm({ mode, jabatan }: JabatanFormProps) {
     e.preventDefault();
     setFieldErrors({});
 
+    if (!branchValue) {
+      setFieldErrors({ branch: "Berlaku untuk wajib dipilih." });
+      toast.error("Pilih cakupan cabang terlebih dahulu.");
+      return;
+    }
+
     const levelValue = (level === LEVEL_NONE ? null : level) as KpiLevel | null;
+    const deptId = departmentId === DEPT_NONE ? null : Number(departmentId);
+    const branchId = branchValue === BRANCH_ALL ? null : Number(branchValue);
 
     startTransition(async () => {
       if (mode === "create") {
@@ -82,8 +123,9 @@ export function JabatanForm({ mode, jabatan }: JabatanFormProps) {
         }
         const result = await createJabatan({
           name,
+          departmentId: deptId,
+          branchId,
           level: levelValue,
-          scope,
           roleSystem: roleSystem as RoleType,
           description,
         });
@@ -91,8 +133,9 @@ export function JabatanForm({ mode, jabatan }: JabatanFormProps) {
       } else if (jabatan) {
         const result = await updateJabatan(jabatan.id, {
           name,
+          departmentId: deptId,
+          branchId,
           level: levelValue,
-          scope,
           description,
           isActive,
         });
@@ -109,11 +152,69 @@ export function JabatanForm({ mode, jabatan }: JabatanFormProps) {
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Contoh: Kepala Divisi"
+          placeholder="Contoh: Staff Accounting, Office Boy"
           disabled={isPending}
         />
         {fieldErrors.name && (
           <p className="text-sm text-destructive">{fieldErrors.name}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label>Berlaku Untuk</Label>
+        <RadioGroup
+          value={branchValue}
+          onValueChange={handleBranchChange}
+          className="flex flex-wrap gap-4"
+        >
+          <Label className="flex cursor-pointer items-center gap-2 font-normal">
+            <RadioGroupItem value={BRANCH_ALL} disabled={isPending} />
+            Semua Cabang
+          </Label>
+          {branches.map((b) => (
+            <Label
+              key={b.id}
+              className="flex cursor-pointer items-center gap-2 font-normal"
+            >
+              <RadioGroupItem value={String(b.id)} disabled={isPending} />
+              {b.isPusat ? "Kantor Pusat" : b.name}
+            </Label>
+          ))}
+        </RadioGroup>
+        {fieldErrors.branch && (
+          <p className="text-sm text-destructive">{fieldErrors.branch}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="departmentId">Departemen</Label>
+        <Select
+          value={departmentId}
+          onValueChange={setDepartmentId}
+          disabled={isPending || !isSpecificBranch}
+        >
+          <SelectTrigger id="departmentId">
+            <SelectValue
+              placeholder={
+                isSpecificBranch
+                  ? "Pilih departemen"
+                  : "Pilih cabang terlebih dahulu"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={DEPT_NONE}>— Tidak terikat departemen —</SelectItem>
+            {branchDepartments.map((d) => (
+              <SelectItem key={d.id} value={String(d.id)}>
+                {d.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {!isSpecificBranch && (
+          <p className="text-xs text-slate-400">
+            Departemen hanya tersedia untuk cabang tertentu.
+          </p>
         )}
       </div>
 
@@ -125,32 +226,9 @@ export function JabatanForm({ mode, jabatan }: JabatanFormProps) {
           className="flex flex-wrap gap-4"
         >
           {[
-            { value: "atas", label: "Atas" },
-            { value: "bawah", label: "Bawah" },
-            { value: LEVEL_NONE, label: "Tidak Ada" },
-          ].map((opt) => (
-            <Label
-              key={opt.value}
-              className="flex cursor-pointer items-center gap-2 font-normal"
-            >
-              <RadioGroupItem value={opt.value} disabled={isPending} />
-              {opt.label}
-            </Label>
-          ))}
-        </RadioGroup>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Berlaku Untuk</Label>
-        <RadioGroup
-          value={scope}
-          onValueChange={(v) => setScope(v as ScopeType)}
-          className="flex flex-wrap gap-4"
-        >
-          {[
-            { value: "pusat", label: "Pusat" },
-            { value: "cabang", label: "Cabang" },
-            { value: "all", label: "Semua" },
+            { value: "atas", label: "KPI Atas (KC & KD)" },
+            { value: "bawah", label: "KPI Bawah (Karyawan)" },
+            { value: LEVEL_NONE, label: "Tidak Ada (Direktur/Admin/HRD)" },
           ].map((opt) => (
             <Label
               key={opt.value}
@@ -191,9 +269,7 @@ export function JabatanForm({ mode, jabatan }: JabatanFormProps) {
               </SelectContent>
             </Select>
             {fieldErrors.roleSystem && (
-              <p className="text-sm text-destructive">
-                {fieldErrors.roleSystem}
-              </p>
+              <p className="text-sm text-destructive">{fieldErrors.roleSystem}</p>
             )}
           </>
         )}

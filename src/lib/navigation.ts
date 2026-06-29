@@ -29,8 +29,9 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
   ],
   hrd: [
     { label: "Kelola Periode", href: "/hrd/periode", icon: Calendar },
-    { label: "Setup KPI Atas", href: "/hrd/kpi/atas", icon: SlidersHorizontal },
-    { label: "Setup KPI Bawah", href: "/hrd/kpi/bawah", icon: SlidersHorizontal },
+    { label: "Setup KPI Pengawas", href: "/hrd/kpi/atas", icon: SlidersHorizontal },
+    { label: "Setup KPI Pelaksana", href: "/hrd/kpi/bawah", icon: SlidersHorizontal },
+    { label: "Data Karyawan", href: "/hrd/karyawan", icon: Users },
     { label: "Penilaian", href: "/hrd/penilaian", icon: ClipboardList },
     { label: "Laporan", href: "/hrd/laporan", icon: FileText },
     { label: "History", href: "/hrd/history", icon: History },
@@ -41,10 +42,14 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
   ],
   kepala_cabang: [
     { label: "Penilaian", href: "/kepala-cabang/penilaian", icon: ClipboardList },
+    { label: "Data Karyawan", href: "/kepala-cabang/karyawan", icon: Users },
+    { label: "Laporan", href: "/kepala-cabang/laporan", icon: FileText },
     { label: "Hasil Penilaian Saya", href: "/kepala-cabang/hasil-saya", icon: FileCheck2 },
   ],
   kepala_divisi: [
     { label: "Penilaian", href: "/kepala-divisi/penilaian", icon: ClipboardList },
+    { label: "Data Karyawan", href: "/kepala-divisi/karyawan", icon: Users },
+    { label: "Laporan", href: "/kepala-divisi/laporan", icon: FileText },
     { label: "Hasil Penilaian Saya", href: "/kepala-divisi/hasil-saya", icon: FileCheck2 },
   ],
   karyawan: [

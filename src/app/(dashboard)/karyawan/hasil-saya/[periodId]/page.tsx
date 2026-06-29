@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 
-import { HasilDetail } from "@/components/assessment/HasilDetail";
+import { HasilPenilaianView } from "@/components/hasil-penilaian/HasilPenilaianView";
 
 export const dynamic = "force-dynamic";
 
 export default function Page({ params }: { params: { periodId: string } }) {
   const id = Number(params.periodId);
   if (Number.isNaN(id)) notFound();
-  return <HasilDetail periodId={id} basePath="/karyawan" />;
+  return <HasilPenilaianView periodId={id} backHref="/karyawan/hasil-saya" />;
 }

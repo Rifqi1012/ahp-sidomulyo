@@ -112,7 +112,7 @@ export function buildPeriodName(startDate: Date, order: number): string {
   return `Periode ${toRoman(order)} — ${month} ${year}`;
 }
 
-/** Nama sederhana berdasarkan urutan: "Periode I/II/III". */
-export function simplePeriodName(order: number): string {
-  return `Periode ${toRoman(order)}`;
+/** Nama periode siklus: "Periode I 2026" (tahun dari tanggal mulai). */
+export function simplePeriodName(order: number, year: number): string {
+  return `Periode ${toRoman(order)} ${year}`;
 }

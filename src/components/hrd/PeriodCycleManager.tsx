@@ -229,6 +229,7 @@ export function PeriodCycleManager({ rows, allClosed }: PeriodCycleManagerProps)
         <TableCell className="text-slate-500">{order}</TableCell>
         <TableCell className="font-medium text-slate-900">
           Periode {toRoman(order)}
+          {startObj ? ` ${startObj.getUTCFullYear()}` : ""}
         </TableCell>
 
         {/* Tgl Mulai */}
@@ -358,7 +359,7 @@ export function PeriodCycleManager({ rows, allClosed }: PeriodCycleManagerProps)
                     disabled={!allThreeDraft || isPending}
                   >
                     <Zap className="h-4 w-4" />
-                    Mulai Siklus Otomatis
+                    Mulai Periode Otomatis
                   </Button>
                 </span>
               </TooltipTrigger>

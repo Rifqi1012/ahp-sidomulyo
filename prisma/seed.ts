@@ -289,18 +289,48 @@ async function main() {
   console.log("✅ Departments created");
 
   // -------------------------------------------------------------------------
-  // 3. JABATAN
+  // 3. JABATAN (terikat departemen & cabang)
   // -------------------------------------------------------------------------
+  const allDepts = await prisma.department.findMany();
+  const deptId = (branchId: number, name: string): number | null =>
+    allDepts.find((d) => d.branchId === branchId && d.name === name)?.id ?? null;
+
+  // Jabatan dasar (id eksplisit 1–8).
   await prisma.jabatan.createMany({
     data: [
-      { id: 1, name: "Direktur", level: null, scope: "pusat", roleSystem: "direktur" },
-      { id: 2, name: "Admin", level: null, scope: "pusat", roleSystem: "admin" },
-      { id: 3, name: "HRD", level: null, scope: "pusat", roleSystem: "hrd" },
-      { id: 4, name: "Kepala Divisi", level: "atas", scope: "pusat", roleSystem: "kepala_divisi" },
-      { id: 5, name: "Karyawan", level: "bawah", scope: "pusat", roleSystem: "karyawan" },
-      { id: 6, name: "Kepala Cabang", level: "atas", scope: "cabang", roleSystem: "kepala_cabang" },
-      { id: 7, name: "Kepala Divisi", level: "atas", scope: "cabang", roleSystem: "kepala_divisi" },
-      { id: 8, name: "Karyawan", level: "bawah", scope: "cabang", roleSystem: "karyawan" },
+      { id: 1, name: "Direktur", level: null, branchId: null, departmentId: null, roleSystem: "direktur" },
+      { id: 2, name: "Admin", level: null, branchId: null, departmentId: null, roleSystem: "admin" },
+      { id: 3, name: "HRD", level: null, branchId: pusat.id, departmentId: deptId(pusat.id, "HC & GA"), roleSystem: "hrd" },
+      { id: 4, name: "Kepala Divisi", level: "atas", branchId: pusat.id, departmentId: null, roleSystem: "kepala_divisi" },
+      { id: 5, name: "Karyawan", level: "bawah", branchId: pusat.id, departmentId: null, roleSystem: "karyawan" },
+      { id: 6, name: "Kepala Cabang", level: "atas", branchId: null, departmentId: null, roleSystem: "kepala_cabang" },
+      { id: 7, name: "Kepala Divisi", level: "atas", branchId: null, departmentId: null, roleSystem: "kepala_divisi" },
+      { id: 8, name: "Karyawan", level: "bawah", branchId: pusat.id, departmentId: null, roleSystem: "karyawan" },
+    ],
+  });
+
+  // Jabatan spesifik (demo) — Pusat.
+  await prisma.jabatan.createMany({
+    data: [
+      { name: "Staff IT", branchId: pusat.id, departmentId: deptId(pusat.id, "Information & Technology"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Staff Finance", branchId: pusat.id, departmentId: deptId(pusat.id, "Finance & Accounting"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Staff HC & GA", branchId: pusat.id, departmentId: deptId(pusat.id, "HC & GA"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Kepala Divisi IT", branchId: pusat.id, departmentId: deptId(pusat.id, "Information & Technology"), roleSystem: "kepala_divisi", level: "atas" },
+      { name: "Kepala Divisi Finance", branchId: pusat.id, departmentId: deptId(pusat.id, "Finance & Accounting"), roleSystem: "kepala_divisi", level: "atas" },
+    ],
+  });
+
+  // Jabatan spesifik (demo) — Cabang Cilegon.
+  await prisma.jabatan.createMany({
+    data: [
+      { name: "Security", branchId: cilegon.id, departmentId: deptId(cilegon.id, "Operational"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Mekanik", branchId: cilegon.id, departmentId: deptId(cilegon.id, "Maintenance"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Welder", branchId: cilegon.id, departmentId: deptId(cilegon.id, "Maintenance"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Staff Warehouse", branchId: cilegon.id, departmentId: deptId(cilegon.id, "Warehouse"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Staff HSE", branchId: cilegon.id, departmentId: deptId(cilegon.id, "HSE"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Office Boy", branchId: cilegon.id, departmentId: deptId(cilegon.id, "HC & GA"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Staff Accounting", branchId: cilegon.id, departmentId: deptId(cilegon.id, "Finance & Accounting"), roleSystem: "karyawan", level: "bawah" },
+      { name: "Staff Isotank", branchId: cilegon.id, departmentId: deptId(cilegon.id, "Isotank"), roleSystem: "karyawan", level: "bawah" },
     ],
   });
 

@@ -1,4 +1,4 @@
-import type { KpiLevel, ScopeType, RoleType } from "@prisma/client";
+import type { KpiLevel, RoleType } from "@prisma/client";
 
 import { ROLE_LABELS } from "@/lib/navigation";
 
@@ -36,12 +36,3 @@ export function levelBadge(level: KpiLevel | null) {
   if (level === "bawah") return LEVEL_BADGE.bawah;
   return LEVEL_BADGE.none;
 }
-
-export const SCOPE_BADGE: Record<
-  ScopeType,
-  { label: string; variant: "purple" | "orange" | "slate" }
-> = {
-  pusat: { label: "Pusat", variant: "purple" },
-  cabang: { label: "Cabang", variant: "orange" },
-  all: { label: "Semua", variant: "slate" },
-};

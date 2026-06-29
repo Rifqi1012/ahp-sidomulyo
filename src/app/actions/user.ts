@@ -41,9 +41,13 @@ export async function getUser(id: number): Promise<UserWithBranch | null> {
 }
 
 export type UserUpdateInput = {
+  name: string;
+  email: string;
   role: RoleType;
   isActive: boolean;
 };
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function updateUser(
   id: number,
@@ -58,11 +62,49 @@ export async function updateUser(
     return { success: false, error: "User tidak ditemukan." };
   }
 
-  // Akun admin utama tidak boleh diubah lewat UI.
-  if (user.email === PROTECTED_ADMIN_EMAIL) {
+  const name = data.name?.trim() ?? "";
+  if (!name) {
     return {
       success: false,
-      error: "Akun admin utama tidak dapat diubah.",
+      error: "Nama tidak boleh kosong.",
+      fieldErrors: { name: "Nama tidak boleh kosong." },
+    };
+  }
+  if (name.length > 150) {
+    return {
+      success: false,
+      error: "Nama maksimal 150 karakter.",
+      fieldErrors: { name: "Nama maksimal 150 karakter." },
+    };
+  }
+
+  const isProtected = user.email === PROTECTED_ADMIN_EMAIL;
+
+  // Akun admin utama: hanya nama yang boleh diubah.
+  if (isProtected) {
+    await prisma.user.update({ where: { id }, data: { name } });
+    revalidatePath("/admin/users");
+    revalidatePath("/admin/karyawan");
+    return { success: true };
+  }
+
+  const email = data.email?.trim().toLowerCase() ?? "";
+  if (!EMAIL_RE.test(email)) {
+    return {
+      success: false,
+      error: "Format email tidak valid.",
+      fieldErrors: { email: "Format email tidak valid." },
+    };
+  }
+  const existing = await prisma.user.findFirst({
+    where: { email, NOT: { id } },
+    select: { id: true },
+  });
+  if (existing) {
+    return {
+      success: false,
+      error: "Email sudah digunakan oleh pengguna lain.",
+      fieldErrors: { email: "Email sudah digunakan oleh pengguna lain." },
     };
   }
 
@@ -77,7 +119,7 @@ export async function updateUser(
 
   await prisma.user.update({
     where: { id },
-    data: { role: data.role, isActive: data.isActive },
+    data: { name, email, role: data.role, isActive: data.isActive },
   });
 
   revalidatePath("/admin/users");

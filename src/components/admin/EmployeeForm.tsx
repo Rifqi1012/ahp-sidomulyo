@@ -82,38 +82,39 @@ export function EmployeeForm({ mode, branches, employee }: EmployeeFormProps) {
   const [successOpen, setSuccessOpen] = useState(false);
   const [createdEmail, setCreatedEmail] = useState("");
 
-  // Muat departemen & jabatan sesuai cabang yang dipilih.
+  // Muat departemen sesuai cabang yang dipilih.
   useEffect(() => {
     if (!branchId) {
       setDepartments([]);
-      setJabatanList([]);
       return;
     }
-    const branch = branches.find((b) => String(b.id) === branchId);
-    const scope = branch?.isPusat ? "pusat" : "cabang";
-
     let active = true;
-    Promise.all([
-      fetch(`/api/internal/departments?branchId=${branchId}`).then((r) =>
-        r.json(),
-      ),
-      fetch(`/api/internal/jabatan?scope=${scope}`).then((r) => r.json()),
-    ])
-      .then(([deptData, jabData]) => {
-        if (!active) return;
-        setDepartments(deptData.departments ?? []);
-        setJabatanList(jabData.jabatan ?? []);
-      })
-      .catch(() => {
-        if (active) {
-          setDepartments([]);
-          setJabatanList([]);
-        }
-      });
+    fetch(`/api/internal/departments?branchId=${branchId}`)
+      .then((r) => r.json())
+      .then((d) => active && setDepartments(d.departments ?? []))
+      .catch(() => active && setDepartments([]));
     return () => {
       active = false;
     };
-  }, [branchId, branches]);
+  }, [branchId]);
+
+  // Muat jabatan sesuai kombinasi cabang + departemen.
+  useEffect(() => {
+    if (!branchId || !departmentId) {
+      setJabatanList([]);
+      return;
+    }
+    let active = true;
+    fetch(
+      `/api/internal/jabatan?branchId=${branchId}&departmentId=${departmentId}`,
+    )
+      .then((r) => r.json())
+      .then((d) => active && setJabatanList(d.jabatan ?? []))
+      .catch(() => active && setJabatanList([]));
+    return () => {
+      active = false;
+    };
+  }, [branchId, departmentId]);
 
   // Realtime preview email (mode create) — debounce.
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -287,7 +288,10 @@ export function EmployeeForm({ mode, branches, employee }: EmployeeFormProps) {
               <Label htmlFor="departmentId">Departemen</Label>
               <Select
                 value={departmentId}
-                onValueChange={setDepartmentId}
+                onValueChange={(v) => {
+                  setDepartmentId(v);
+                  setJabatanId("");
+                }}
                 disabled={isPending || !branchId}
               >
                 <SelectTrigger id="departmentId">
@@ -313,7 +317,7 @@ export function EmployeeForm({ mode, branches, employee }: EmployeeFormProps) {
               <Select
                 value={jabatanId}
                 onValueChange={setJabatanId}
-                disabled={isPending || !branchId}
+                disabled={isPending || !branchId || !departmentId}
               >
                 <SelectTrigger id="jabatanId">
                   <SelectValue placeholder="Pilih jabatan" />

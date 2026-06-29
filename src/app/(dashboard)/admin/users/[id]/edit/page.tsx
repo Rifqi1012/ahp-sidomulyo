@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { getUser } from "@/app/actions/user";
 import { PROTECTED_ADMIN_EMAIL } from "@/lib/constants";
@@ -18,11 +18,6 @@ export default async function EditUserPage({
   const user = await getUser(id);
   if (!user) notFound();
 
-  // Akun admin utama tidak dapat diedit.
-  if (user.email === PROTECTED_ADMIN_EMAIL) {
-    redirect("/admin/users");
-  }
-
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
@@ -39,6 +34,7 @@ export default async function EditUserPage({
             role: user.role,
             isActive: user.isActive,
           }}
+          isProtected={user.email === PROTECTED_ADMIN_EMAIL}
         />
       </div>
     </div>
