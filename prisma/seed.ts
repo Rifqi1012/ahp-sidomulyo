@@ -9,12 +9,11 @@ const prisma = new PrismaClient();
 type SubDef = {
   name: string;
   description: string;
-  bobotPersen: number; // bobot subkriteria di dalam kriteria (sum = 100 per kriteria)
+  ahpWeight: number; // bobot AHP per-kriteria (Σ = 1.0 per kriteria)
 };
 
 type CriteriaDef = {
   name: string;
-  bobotPersen: number; // bobot kriteria (sum = 100 per template)
   subcriteria: SubDef[];
 };
 
@@ -24,76 +23,27 @@ type CriteriaDef = {
 const KPI_ATAS: CriteriaDef[] = [
   {
     name: "Perilaku",
-    bobotPersen: 25,
     subcriteria: [
-      {
-        name: "Integritas",
-        bobotPersen: 25,
-        description:
-          "Melaksanakan komitmen yang telah disepakati; Jujur: Berbicara sesuai fakta dan data",
-      },
-      {
-        name: "Kerajinan",
-        bobotPersen: 15,
-        description:
-          "Kehadiran: Hadir Tepat Waktu; Ulet: Selalu mencari solusi untuk capai target",
-      },
-      {
-        name: "Kerjasama",
-        bobotPersen: 20,
-        description:
-          "Proaktif dan komunikatif; Mau mendengar & menghargai pendapat orang lain; Bisa bekerja secara bergotong royong",
-      },
-      {
-        name: "Tanggungjawab",
-        bobotPersen: 20,
-        description:
-          "Tugas & persoalan segera diselesaikan; Turba: Blusukan melihat fakta/lapangan; Melaporkan setiap perkembangan kepada atasan",
-      },
-      {
-        name: "Improvement",
-        bobotPersen: 20,
-        description:
-          "Memberikan ide kreatif untuk perbaikan; Melaksanakan tindakan kreatif untuk perbaikan",
-      },
+      { name: "Integritas", ahpWeight: 0.2, description: "Melaksanakan komitmen yang telah disepakati; Jujur: Berbicara sesuai fakta dan data" },
+      { name: "Kerajinan", ahpWeight: 0.2, description: "Kehadiran: Hadir Tepat Waktu; Ulet: Selalu mencari solusi untuk capai target" },
+      { name: "Kerjasama", ahpWeight: 0.2, description: "Proaktif dan komunikatif; Mau mendengar & menghargai pendapat orang lain; Bisa bekerja secara bergotong royong" },
+      { name: "Tanggungjawab", ahpWeight: 0.2, description: "Tugas & persoalan segera diselesaikan; Turba: Blusukan melihat fakta/lapangan; Melaporkan setiap perkembangan kepada atasan" },
+      { name: "Improvement", ahpWeight: 0.2, description: "Memberikan ide kreatif untuk perbaikan; Melaksanakan tindakan kreatif untuk perbaikan" },
     ],
   },
   {
     name: "Kepemimpinan",
-    bobotPersen: 25,
     subcriteria: [
-      {
-        name: "Kepemimpinan",
-        bobotPersen: 100,
-        description:
-          "Mampu mengarahkan & memotivasi team; Mampu mendelegasikan tugas; Membuat suasana kondusif; Mampu melakukan kaderisasi; Mampu melaksanakan coaching & counseling; Mampu membuat keputusan yang tepat",
-      },
+      { name: "Kepemimpinan", ahpWeight: 1.0, description: "Mampu mengarahkan & memotivasi team; Mampu mendelegasikan tugas; Membuat suasana kondusif; Mampu melakukan kaderisasi; Mampu melaksanakan coaching & counseling; Mampu membuat keputusan yang tepat" },
     ],
   },
   {
     name: "Target Kerja",
-    bobotPersen: 50,
     subcriteria: [
-      {
-        name: "Target vs Realisasi",
-        bobotPersen: 25,
-        description: "Memonitor seluruh kegiatan operational",
-      },
-      {
-        name: "Relationship",
-        bobotPersen: 25,
-        description: "Menjalin komunikasi dengan tokoh agama/masyarakat",
-      },
-      {
-        name: "Koordinasi Internal",
-        bobotPersen: 25,
-        description: "Melaporkan ketersediaan unit kendaraan",
-      },
-      {
-        name: "Monitoring & Coaching",
-        bobotPersen: 25,
-        description: "Pelaksanaan monitoring, coaching, counseling",
-      },
+      { name: "Target vs Realisasi", ahpWeight: 0.25, description: "Memonitor seluruh kegiatan operational" },
+      { name: "Relationship", ahpWeight: 0.25, description: "Menjalin komunikasi dengan tokoh agama/masyarakat" },
+      { name: "Koordinasi Internal", ahpWeight: 0.25, description: "Melaporkan ketersediaan unit kendaraan" },
+      { name: "Monitoring & Coaching", ahpWeight: 0.25, description: "Pelaksanaan monitoring, coaching, counseling" },
     ],
   },
 ];
@@ -104,56 +54,20 @@ const KPI_ATAS: CriteriaDef[] = [
 const KPI_BAWAH: CriteriaDef[] = [
   {
     name: "Faktor Efisiensi",
-    bobotPersen: 60,
     subcriteria: [
-      {
-        name: "Penguasaan Pekerjaan",
-        bobotPersen: 33.33,
-        description: "Penguasaan terhadap pekerjaan",
-      },
-      {
-        name: "Orientasi Mutu",
-        bobotPersen: 33.33,
-        description:
-          "Menyelesaikan tugas dengan memperhatikan semua bidang yang terkait",
-      },
-      {
-        name: "Jumlah Pekerjaan",
-        bobotPersen: 33.34,
-        description:
-          "Kemampuan menyelesaikan tugas dan tanggung jawab yang diberikan atasan",
-      },
+      { name: "Penguasaan Pekerjaan", ahpWeight: 0.5, description: "Penguasaan terhadap pekerjaan" },
+      { name: "Orientasi Mutu", ahpWeight: 0.3, description: "Menyelesaikan tugas dengan memperhatikan semua bidang yang terkait" },
+      { name: "Jumlah Pekerjaan", ahpWeight: 0.2, description: "Kemampuan menyelesaikan tugas dan tanggung jawab yang diberikan atasan" },
     ],
   },
   {
     name: "Faktor Kebiasaan Kerja",
-    bobotPersen: 40,
     subcriteria: [
-      {
-        name: "Komunikasi",
-        bobotPersen: 20,
-        description: "Dapat menyampaikan gagasan secara efektif",
-      },
-      {
-        name: "Inisiatif",
-        bobotPersen: 20,
-        description: "Aktif dengan berbagai usaha untuk mencapai sasaran",
-      },
-      {
-        name: "Follow Up",
-        bobotPersen: 20,
-        description: "Dapat memantau hasil-hasil delegasi dan penugasan",
-      },
-      {
-        name: "Team Work",
-        bobotPersen: 20,
-        description: "Bekerja secara efektif dengan Tim",
-      },
-      {
-        name: "Kehadiran",
-        bobotPersen: 20,
-        description: "Kehadiran dan ketepatan waktu dalam bekerja",
-      },
+      { name: "Komunikasi", ahpWeight: 0.08, description: "Dapat menyampaikan gagasan secara efektif" },
+      { name: "Inisiatif", ahpWeight: 0.19, description: "Aktif dengan berbagai usaha untuk mencapai sasaran" },
+      { name: "Follow Up", ahpWeight: 0.22, description: "Dapat memantau hasil-hasil delegasi dan penugasan" },
+      { name: "Team Work", ahpWeight: 0.11, description: "Bekerja secara efektif dengan Tim" },
+      { name: "Kehadiran", ahpWeight: 0.4, description: "Kehadiran dan ketepatan waktu dalam bekerja" },
     ],
   },
 ];
@@ -166,60 +80,42 @@ const KPI_BAWAH: CriteriaDef[] = [
  *   ahpWeightRaw = (bobotSub/100) × (bobotKriteria/100)
  *   ahpWeight    = ahpWeightRaw / Σ(ahpWeightRaw)
  */
+/**
+ * Buat 1 KpiTemplate. ahpWeight = bobot AHP per-kriteria (Σ = 1 per kriteria).
+ * globalWeight = ahpWeight / jumlah kriteria (kriteria berbobot setara),
+ * sehingga Σ globalWeight semua subkriteria = 1.0.
+ */
 async function createKpiTemplate(
   type: KpiType,
   criteriaDefs: CriteriaDef[],
   createdBy: number,
 ) {
-  const totalCriteriaBobot = criteriaDefs.reduce(
-    (sum, c) => sum + c.bobotPersen,
-    0,
-  );
-
-  // total raw weight untuk normalisasi global
-  const totalRaw = criteriaDefs.reduce((sum, c) => {
-    const subSum = c.subcriteria.reduce(
-      (s, sub) => s + (sub.bobotPersen / 100) * (c.bobotPersen / 100),
-      0,
-    );
-    return sum + subSum;
-  }, 0);
+  const numCriteria = criteriaDefs.length;
 
   const template = await prisma.kpiTemplate.create({
-    data: {
-      type,
-      version: 1,
-      isCurrent: true,
-      createdBy,
-    },
+    data: { type, version: 1, isCurrent: true, createdBy },
   });
 
   for (let i = 0; i < criteriaDefs.length; i++) {
     const c = criteriaDefs[i];
-    const criteriaAhp = c.bobotPersen / totalCriteriaBobot;
-
     const criteria = await prisma.kpiCriteria.create({
       data: {
         kpiTemplateId: template.id,
         name: c.name,
-        bobotPersen: c.bobotPersen,
-        ahpWeight: Number(criteriaAhp.toFixed(6)),
+        ahpWeight: Number((1 / numCriteria).toFixed(6)),
         orderNumber: i + 1,
       },
     });
 
     for (let j = 0; j < c.subcriteria.length; j++) {
       const sub = c.subcriteria[j];
-      const raw = (sub.bobotPersen / 100) * (c.bobotPersen / 100);
-      const ahpWeight = raw / totalRaw; // normalisasi global
-
       await prisma.kpiSubcriteria.create({
         data: {
           kpiCriteriaId: criteria.id,
           name: sub.name,
           description: sub.description,
-          bobotPersen: sub.bobotPersen,
-          ahpWeight: Number(ahpWeight.toFixed(6)),
+          ahpWeight: Number(sub.ahpWeight.toFixed(6)),
+          globalWeight: Number((sub.ahpWeight / numCriteria).toFixed(6)),
           orderNumber: j + 1,
         },
       });

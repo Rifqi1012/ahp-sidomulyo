@@ -143,13 +143,13 @@ model KpiCriteria {
   id            Int      @id @default(autoincrement())
   kpiTemplateId Int      @map("kpi_template_id")
   name          String   @db.VarChar(150)
-  bobotPersen   Decimal  @map("bobot_persen") @db.Decimal(5, 2)
-  ahpWeight     Decimal  @map("ahp_weight") @db.Decimal(10, 6)
+  ahpWeight     Decimal? @map("ahp_weight") @db.Decimal(10, 6)
   orderNumber   Int      @default(1) @map("order_number")
   createdAt     DateTime @default(now()) @map("created_at")
 
   template    KpiTemplate      @relation(fields: [kpiTemplateId], references: [id])
   subcriteria KpiSubcriteria[]
+  comparisons AhpComparison[]
 
   @@map("kpi_criteria")
 }
@@ -159,15 +159,33 @@ model KpiSubcriteria {
   kpiCriteriaId Int      @map("kpi_criteria_id")
   name          String   @db.VarChar(255)
   description   String?  @db.Text
-  bobotPersen   Decimal  @map("bobot_persen") @db.Decimal(5, 2)
-  ahpWeight     Decimal  @map("ahp_weight") @db.Decimal(10, 6)
+  ahpWeight     Decimal? @map("ahp_weight") @db.Decimal(10, 6)
+  globalWeight  Decimal? @map("global_weight") @db.Decimal(10, 6)
   orderNumber   Int      @default(1) @map("order_number")
   createdAt     DateTime @default(now()) @map("created_at")
 
   criteria          KpiCriteria        @relation(fields: [kpiCriteriaId], references: [id])
   assessmentDetails AssessmentDetail[]
+  comparisonsI      AhpComparison[]    @relation("ComparisonI")
+  comparisonsJ      AhpComparison[]    @relation("ComparisonJ")
 
   @@map("kpi_subcriteria")
+}
+
+model AhpComparison {
+  id             Int      @id @default(autoincrement())
+  kpiCriteriaId  Int      @map("kpi_criteria_id")
+  subcriteriaIId Int      @map("subcriteria_i_id")
+  subcriteriaJId Int      @map("subcriteria_j_id")
+  value          Decimal  @db.Decimal(8, 4)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  criteria     KpiCriteria    @relation(fields: [kpiCriteriaId], references: [id], onDelete: Cascade)
+  subcriteriaI KpiSubcriteria @relation("ComparisonI", fields: [subcriteriaIId], references: [id], onDelete: Cascade)
+  subcriteriaJ KpiSubcriteria @relation("ComparisonJ", fields: [subcriteriaJId], references: [id], onDelete: Cascade)
+
+  @@unique([kpiCriteriaId, subcriteriaIId, subcriteriaJId])
+  @@map("ahp_comparisons")
 }
 
 model Assessment {

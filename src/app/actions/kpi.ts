@@ -5,199 +5,448 @@ import type { KpiType } from "@prisma/client";
 
 import prisma from "@/lib/prisma";
 import { isHrd, getSessionUser } from "@/lib/auth-guard";
-import {
-  calculateAhpFromBobot,
-  calculateGlobalAhpWeights,
-} from "@/lib/ahp";
+import { calculateAhpFromMatrix, calculateGlobalWeights } from "@/lib/ahp";
 
-const TOTAL_TOLERANCE = 0.1;
-const near100 = (n: number) => Math.abs(n - 100) <= TOTAL_TOLERANCE;
+export type ActionResult =
+  | { success: true }
+  | { success: false; error: string };
 
 // ---------------------------------------------------------------------------
-// Read: KPI saat ini
+// Helpers
 // ---------------------------------------------------------------------------
 
-export type KpiSubDTO = {
-  id: number;
-  name: string;
-  description: string;
-  bobotPersen: number;
-  ahpWeight: number;
-  orderNumber: number;
-};
+type Comp = { subcriteriaIId: number; subcriteriaJId: number; value: number };
 
-export type KpiCriteriaDTO = {
-  id: number;
-  name: string;
-  orderNumber: number;
-  subcriteria: KpiSubDTO[];
-};
+function buildMatrix(subIds: number[], comps: Comp[]): number[][] {
+  const n = subIds.length;
+  const idx = new Map(subIds.map((id, i) => [id, i]));
+  const m = Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j): number => (i === j ? 1 : 0)),
+  );
+  for (const c of comps) {
+    const i = idx.get(c.subcriteriaIId);
+    const j = idx.get(c.subcriteriaJId);
+    if (i == null || j == null) continue;
+    const v = Number(c.value);
+    m[i][j] = v;
+    m[j][i] = v !== 0 ? 1 / v : 0;
+  }
+  return m;
+}
 
-export type KpiTemplateDTO = {
-  id: number;
-  type: KpiType;
-  version: number;
-  createdAt: string;
-  criteria: KpiCriteriaDTO[];
-};
+export type AhpStatus = "empty" | "inconsistent" | "consistent";
 
-export async function getCurrentKpi(
-  type: KpiType,
-): Promise<KpiTemplateDTO | null> {
-  const template = await prisma.kpiTemplate.findFirst({
+function statusOf(
+  subIds: number[],
+  comps: Comp[],
+): { status: AhpStatus; cr: number | null } {
+  const n = subIds.length;
+  if (n < 2) return { status: "consistent", cr: 0 };
+  if (comps.length < (n * (n - 1)) / 2) return { status: "empty", cr: null };
+  const r = calculateAhpFromMatrix(buildMatrix(subIds, comps));
+  return { status: r.isConsistent ? "consistent" : "inconsistent", cr: r.cr };
+}
+
+async function getCurrentTemplate(type: KpiType) {
+  return prisma.kpiTemplate.findFirst({
     where: { type, isCurrent: true },
     include: {
       criteria: {
         orderBy: { orderNumber: "asc" },
-        include: { subcriteria: { orderBy: { orderNumber: "asc" } } },
+        include: {
+          subcriteria: { orderBy: { orderNumber: "asc" } },
+          comparisons: true,
+        },
       },
     },
   });
-  if (!template) return null;
+}
 
-  return {
-    id: template.id,
-    type: template.type,
-    version: template.version,
-    createdAt: template.createdAt.toISOString(),
-    criteria: template.criteria.map((c) => ({
-      id: c.id,
-      name: c.name,
-      orderNumber: c.orderNumber,
-      subcriteria: c.subcriteria.map((s) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description ?? "",
-        bobotPersen: Number(s.bobotPersen),
-        ahpWeight: Number(s.ahpWeight),
-        orderNumber: s.orderNumber,
-      })),
-    })),
-  };
+async function resetCriteriaAhp(criteriaId: number) {
+  await prisma.ahpComparison.deleteMany({ where: { kpiCriteriaId: criteriaId } });
+  await prisma.kpiSubcriteria.updateMany({
+    where: { kpiCriteriaId: criteriaId },
+    data: { ahpWeight: null },
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Write: simpan versi baru (CRUD difinalisasi sekaligus)
+// Step 1: struktur KPI
 // ---------------------------------------------------------------------------
 
-export type KpiSaveData = {
-  criteria: {
-    name: string;
-    subcriteria: { name: string; description: string; bobotPersen: number }[];
-  }[];
+export type KpiSubItem = {
+  id: number;
+  name: string;
+  description: string;
+  ahpWeight: number | null;
+};
+export type KpiCritItem = {
+  id: number;
+  name: string;
+  subcriteria: KpiSubItem[];
+  ahpStatus: AhpStatus;
+  cr: number | null;
+};
+export type KpiStructure = {
+  templateId: number;
+  version: number;
+  createdAt: string;
+  type: KpiType;
+  criteria: KpiCritItem[];
 };
 
-export type SaveKpiResult =
-  | { success: true; newVersion: number }
-  | { success: false; errors: string[] };
-
-export async function saveKpi(
+export async function getKpiStructure(
   type: KpiType,
-  data: KpiSaveData,
-): Promise<SaveKpiResult> {
-  const user = await getSessionUser();
-  if (!user || !(await isHrd())) {
-    return { success: false, errors: ["Anda tidak memiliki akses."] };
-  }
+): Promise<KpiStructure | null> {
+  const t = await getCurrentTemplate(type);
+  if (!t) return null;
+  return {
+    templateId: t.id,
+    version: t.version,
+    createdAt: t.createdAt.toISOString(),
+    type: t.type,
+    criteria: t.criteria.map((c) => {
+      const subIds = c.subcriteria.map((s) => s.id);
+      const comps = c.comparisons.map((x) => ({
+        subcriteriaIId: x.subcriteriaIId,
+        subcriteriaJId: x.subcriteriaJId,
+        value: Number(x.value),
+      }));
+      const { status, cr } = statusOf(subIds, comps);
+      return {
+        id: c.id,
+        name: c.name,
+        subcriteria: c.subcriteria.map((s) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description ?? "",
+          ahpWeight: s.ahpWeight != null ? Number(s.ahpWeight) : null,
+        })),
+        ahpStatus: status,
+        cr,
+      };
+    }),
+  };
+}
 
-  // --- Validasi struktur & bobot ---
-  const errors: string[] = [];
-  if (data.criteria.length === 0) {
-    errors.push("Minimal harus ada satu kriteria.");
-  }
-  data.criteria.forEach((c, i) => {
-    const label = c.name.trim() || `Kriteria ${i + 1}`;
-    if (!c.name.trim()) errors.push(`Nama kriteria ke-${i + 1} wajib diisi.`);
-    if (c.subcriteria.length === 0) {
-      errors.push(`Kriteria "${label}" belum memiliki subkriteria.`);
-      return;
-    }
-    c.subcriteria.forEach((s, j) => {
-      if (!s.name.trim())
-        errors.push(`Nama subkriteria ke-${j + 1} pada "${label}" wajib diisi.`);
+async function guard(): Promise<ActionResult | null> {
+  return (await isHrd()) ? null : { success: false, error: "Anda tidak memiliki akses." };
+}
+
+export async function addCriteria(
+  type: KpiType,
+  name: string,
+): Promise<ActionResult> {
+  const g = await guard();
+  if (g) return g;
+  if (!name.trim()) return { success: false, error: "Nama kriteria wajib diisi." };
+  const t = await getCurrentTemplate(type);
+  if (!t) return { success: false, error: "Template KPI tidak ditemukan." };
+  await prisma.kpiCriteria.create({
+    data: {
+      kpiTemplateId: t.id,
+      name: name.trim(),
+      orderNumber: t.criteria.length + 1,
+    },
+  });
+  revalidatePath(`/hrd/kpi/${type}`);
+  return { success: true };
+}
+
+export async function updateCriteria(
+  id: number,
+  name: string,
+): Promise<ActionResult> {
+  const g = await guard();
+  if (g) return g;
+  if (!name.trim()) return { success: false, error: "Nama kriteria wajib diisi." };
+  await prisma.kpiCriteria.update({ where: { id }, data: { name: name.trim() } });
+  revalidatePath("/hrd/kpi/atas");
+  revalidatePath("/hrd/kpi/bawah");
+  return { success: true };
+}
+
+export async function deleteCriteria(id: number): Promise<ActionResult> {
+  const g = await guard();
+  if (g) return g;
+  await prisma.ahpComparison.deleteMany({ where: { kpiCriteriaId: id } });
+  await prisma.kpiSubcriteria.deleteMany({ where: { kpiCriteriaId: id } });
+  await prisma.kpiCriteria.delete({ where: { id } });
+  revalidatePath("/hrd/kpi/atas");
+  revalidatePath("/hrd/kpi/bawah");
+  return { success: true };
+}
+
+export async function addSubcriteria(
+  criteriaId: number,
+  data: { name: string; description: string },
+): Promise<ActionResult> {
+  const g = await guard();
+  if (g) return g;
+  if (!data.name.trim())
+    return { success: false, error: "Nama subkriteria wajib diisi." };
+  const count = await prisma.kpiSubcriteria.count({
+    where: { kpiCriteriaId: criteriaId },
+  });
+  await prisma.kpiSubcriteria.create({
+    data: {
+      kpiCriteriaId: criteriaId,
+      name: data.name.trim(),
+      description: data.description.trim() || null,
+      orderNumber: count + 1,
+    },
+  });
+  // Struktur berubah → reset AHP kriteria ini.
+  await resetCriteriaAhp(criteriaId);
+  revalidatePath("/hrd/kpi/atas");
+  revalidatePath("/hrd/kpi/bawah");
+  return { success: true };
+}
+
+export async function updateSubcriteria(
+  id: number,
+  data: { name: string; description: string },
+): Promise<ActionResult> {
+  const g = await guard();
+  if (g) return g;
+  if (!data.name.trim())
+    return { success: false, error: "Nama subkriteria wajib diisi." };
+  await prisma.kpiSubcriteria.update({
+    where: { id },
+    data: { name: data.name.trim(), description: data.description.trim() || null },
+  });
+  revalidatePath("/hrd/kpi/atas");
+  revalidatePath("/hrd/kpi/bawah");
+  return { success: true };
+}
+
+export async function deleteSubcriteria(id: number): Promise<ActionResult> {
+  const g = await guard();
+  if (g) return g;
+  const sub = await prisma.kpiSubcriteria.findUnique({ where: { id } });
+  if (!sub) return { success: false, error: "Subkriteria tidak ditemukan." };
+  await prisma.kpiSubcriteria.delete({ where: { id } });
+  await resetCriteriaAhp(sub.kpiCriteriaId);
+  revalidatePath("/hrd/kpi/atas");
+  revalidatePath("/hrd/kpi/bawah");
+  return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Step 2: perbandingan AHP
+// ---------------------------------------------------------------------------
+
+export type ComparisonInput = {
+  subIId: number;
+  subJId: number;
+  value: number;
+};
+
+export type SaveComparisonsResult = {
+  weights: { id: number; name: string; weight: number }[];
+  lambdaMax: number;
+  ci: number;
+  cr: number;
+  isConsistent: boolean;
+};
+
+export async function getComparisons(
+  criteriaId: number,
+): Promise<ComparisonInput[]> {
+  const comps = await prisma.ahpComparison.findMany({
+    where: { kpiCriteriaId: criteriaId },
+  });
+  return comps.map((c) => ({
+    subIId: c.subcriteriaIId,
+    subJId: c.subcriteriaJId,
+    value: Number(c.value),
+  }));
+}
+
+export type SaveComparisonsReturn =
+  | { ok: false; error: string }
+  | { ok: true; result: SaveComparisonsResult };
+
+export async function saveComparisons(
+  criteriaId: number,
+  comparisons: ComparisonInput[],
+): Promise<SaveComparisonsReturn> {
+  if (!(await isHrd())) return { ok: false, error: "Anda tidak memiliki akses." };
+
+  const subs = await prisma.kpiSubcriteria.findMany({
+    where: { kpiCriteriaId: criteriaId },
+    orderBy: { orderNumber: "asc" },
+  });
+  const subIds = subs.map((s) => s.id);
+
+  // Simpan comparisons (replace).
+  await prisma.ahpComparison.deleteMany({ where: { kpiCriteriaId: criteriaId } });
+  if (comparisons.length > 0) {
+    await prisma.ahpComparison.createMany({
+      data: comparisons.map((c) => ({
+        kpiCriteriaId: criteriaId,
+        subcriteriaIId: c.subIId,
+        subcriteriaJId: c.subJId,
+        value: c.value,
+      })),
     });
-    const subTotal = c.subcriteria.reduce((s, x) => s + x.bobotPersen, 0);
-    if (!near100(subTotal)) {
-      errors.push(
-        `Total bobot subkriteria "${label}" harus 100% (saat ini: ${subTotal.toFixed(2)}%).`,
-      );
-    }
-  });
-  if (errors.length > 0) return { success: false, errors };
+  }
 
-  // --- Bobot global (kriteria tidak punya bobot → normalisasi global) ---
-  const allBobots = data.criteria.flatMap((c) =>
-    c.subcriteria.map((s) => s.bobotPersen),
+  const r = calculateAhpFromMatrix(
+    buildMatrix(
+      subIds,
+      comparisons.map((c) => ({
+        subcriteriaIId: c.subIId,
+        subcriteriaJId: c.subJId,
+        value: c.value,
+      })),
+    ),
   );
-  const globalWeights = calculateGlobalAhpWeights(allBobots);
-  const round6 = (n: number) => Number(n.toFixed(6));
 
-  const current = await prisma.kpiTemplate.findFirst({
-    where: { type, isCurrent: true },
-  });
-  const newVersion = (current?.version ?? 0) + 1;
-
-  const created = await prisma.$transaction(async (tx) => {
-    if (current) {
-      await tx.kpiTemplate.update({
-        where: { id: current.id },
-        data: { isCurrent: false },
+  // Simpan bobot hanya jika konsisten.
+  if (r.isConsistent) {
+    for (let i = 0; i < subIds.length; i++) {
+      await prisma.kpiSubcriteria.update({
+        where: { id: subIds[i] },
+        data: { ahpWeight: Number((r.weights[i] ?? 0).toFixed(6)) },
       });
     }
+  } else {
+    await prisma.kpiSubcriteria.updateMany({
+      where: { kpiCriteriaId: criteriaId },
+      data: { ahpWeight: null },
+    });
+  }
 
-    const template = await tx.kpiTemplate.create({
+  revalidatePath("/hrd/kpi/atas");
+  revalidatePath("/hrd/kpi/bawah");
+  return {
+    ok: true,
+    result: {
+      weights: subs.map((s, i) => ({
+        id: s.id,
+        name: s.name,
+        weight: r.weights[i] ?? 0,
+      })),
+      lambdaMax: r.lambdaMax,
+      ci: r.ci,
+      cr: r.cr,
+      isConsistent: r.isConsistent,
+    },
+  };
+}
+
+export type SaveAllResult =
+  | { success: true; newVersion: number }
+  | { success: false; error: string };
+
+export async function saveAllAndCreateVersion(
+  type: KpiType,
+): Promise<SaveAllResult> {
+  const user = await getSessionUser();
+  if (!user || !(await isHrd()))
+    return { success: false, error: "Anda tidak memiliki akses." };
+
+  const t = await getCurrentTemplate(type);
+  if (!t) return { success: false, error: "Template KPI tidak ditemukan." };
+  if (t.criteria.length === 0)
+    return { success: false, error: "Belum ada kriteria." };
+
+  // Validasi: semua kriteria konsisten.
+  for (const c of t.criteria) {
+    if (c.subcriteria.length === 0)
+      return {
+        success: false,
+        error: `Kriteria "${c.name}" belum punya subkriteria.`,
+      };
+    const subIds = c.subcriteria.map((s) => s.id);
+    const comps = c.comparisons.map((x) => ({
+      subcriteriaIId: x.subcriteriaIId,
+      subcriteriaJId: x.subcriteriaJId,
+      value: Number(x.value),
+    }));
+    const { status } = statusOf(subIds, comps);
+    if (status !== "consistent")
+      return {
+        success: false,
+        error: `Kriteria "${c.name}" belum konsisten / belum diisi.`,
+      };
+  }
+
+  // ahpWeight per sub (1 untuk kriteria 1-sub) + globalWeight.
+  const critForGlobal = t.criteria.map((c) => ({
+    subcriteria: c.subcriteria.map((s) => ({
+      id: s.id,
+      ahpWeight:
+        c.subcriteria.length < 2 ? 1 : Number(s.ahpWeight ?? 0),
+    })),
+  }));
+  const globalMap = calculateGlobalWeights(critForGlobal);
+
+  const newTemplate = await prisma.$transaction(async (tx) => {
+    await tx.kpiTemplate.update({
+      where: { id: t.id },
+      data: { isCurrent: false },
+    });
+    const created = await tx.kpiTemplate.create({
       data: {
         type,
-        version: newVersion,
+        version: t.version + 1,
         isCurrent: true,
         createdBy: user.id,
       },
     });
 
-    let globalIndex = 0;
-    for (let i = 0; i < data.criteria.length; i++) {
-      const c = data.criteria[i];
-      // Share kriteria = Σ bobot subnya / total semua bobot (informatif).
-      const critShare = c.subcriteria.reduce(
-        (acc, s, j) => acc + (globalWeights[globalIndex + j] ?? 0),
-        0,
-      );
-      const newCriteria = await tx.kpiCriteria.create({
+    for (const c of t.criteria) {
+      const newCrit = await tx.kpiCriteria.create({
         data: {
-          kpiTemplateId: template.id,
-          name: c.name.trim(),
-          bobotPersen: 0, // kriteria tidak punya bobot di v2
-          ahpWeight: round6(critShare),
-          orderNumber: i + 1,
+          kpiTemplateId: created.id,
+          name: c.name,
+          ahpWeight: Number((1 / t.criteria.length).toFixed(6)),
+          orderNumber: c.orderNumber,
         },
       });
-
-      for (let j = 0; j < c.subcriteria.length; j++) {
-        const s = c.subcriteria[j];
-        await tx.kpiSubcriteria.create({
+      const subIdMap = new Map<number, number>();
+      for (const s of c.subcriteria) {
+        const ahp = c.subcriteria.length < 2 ? 1 : Number(s.ahpWeight ?? 0);
+        const newSub = await tx.kpiSubcriteria.create({
           data: {
-            kpiCriteriaId: newCriteria.id,
-            name: s.name.trim(),
-            description: s.description?.trim() || null,
-            bobotPersen: s.bobotPersen,
-            ahpWeight: round6(globalWeights[globalIndex] ?? 0),
-            orderNumber: j + 1,
+            kpiCriteriaId: newCrit.id,
+            name: s.name,
+            description: s.description,
+            ahpWeight: Number(ahp.toFixed(6)),
+            globalWeight: Number((globalMap.get(s.id) ?? 0).toFixed(6)),
+            orderNumber: s.orderNumber,
           },
         });
-        globalIndex += 1;
+        subIdMap.set(s.id, newSub.id);
+      }
+      // Salin comparisons agar matriks tetap bisa dilihat.
+      for (const cmp of c.comparisons) {
+        const ni = subIdMap.get(cmp.subcriteriaIId);
+        const nj = subIdMap.get(cmp.subcriteriaJId);
+        if (ni && nj) {
+          await tx.ahpComparison.create({
+            data: {
+              kpiCriteriaId: newCrit.id,
+              subcriteriaIId: ni,
+              subcriteriaJId: nj,
+              value: cmp.value,
+            },
+          });
+        }
       }
     }
-
-    return template;
+    return created;
   });
 
   revalidatePath(`/hrd/kpi/${type}`);
   revalidatePath(`/hrd/kpi/${type}/ahp-result`);
-  return { success: true, newVersion: created.version };
+  return { success: true, newVersion: newTemplate.version };
 }
 
 // ---------------------------------------------------------------------------
-// Read: hasil perhitungan AHP (matriks, priority vector, CR, bobot global)
+// Hasil AHP (untuk halaman /ahp-result)
 // ---------------------------------------------------------------------------
 
 export type AhpCriteriaResult = {
@@ -219,56 +468,45 @@ export type AhpResultDTO = {
 };
 
 export async function getAhpResult(type: KpiType): Promise<AhpResultDTO | null> {
-  const template = await prisma.kpiTemplate.findFirst({
-    where: { type, isCurrent: true },
-    include: {
-      criteria: {
-        orderBy: { orderNumber: "asc" },
-        include: { subcriteria: { orderBy: { orderNumber: "asc" } } },
-      },
-    },
-  });
-  if (!template) return null;
+  const t = await getCurrentTemplate(type);
+  if (!t) return null;
 
-  const allBobots = template.criteria.flatMap((c) =>
-    c.subcriteria.map((s) => Number(s.bobotPersen)),
-  );
-  const globalWeights = calculateGlobalAhpWeights(allBobots);
-
-  const criteria: AhpCriteriaResult[] = template.criteria.map((c) => {
-    const subs = c.subcriteria.map((s) => ({
-      id: s.id,
-      name: s.name,
-      bobotPersen: Number(s.bobotPersen),
+  const criteria: AhpCriteriaResult[] = t.criteria.map((c) => {
+    const subIds = c.subcriteria.map((s) => s.id);
+    const comps = c.comparisons.map((x) => ({
+      subcriteriaIId: x.subcriteriaIId,
+      subcriteriaJId: x.subcriteriaJId,
+      value: Number(x.value),
     }));
-    const ahp = calculateAhpFromBobot(subs);
+    const matrix = buildMatrix(subIds, comps);
+    const r = calculateAhpFromMatrix(matrix);
     return {
       name: c.name,
-      subNames: subs.map((s) => s.name),
-      matrix: ahp.matrix,
-      weights: ahp.weights.map((w, i) => ({
-        name: subs[i].name,
-        ahpWeight: w.ahpWeight,
+      subNames: c.subcriteria.map((s) => s.name),
+      matrix,
+      weights: c.subcriteria.map((s, i) => ({
+        name: s.name,
+        ahpWeight: r.weights[i] ?? Number(s.ahpWeight ?? 0),
       })),
-      lambdaMax: ahp.lambdaMax,
-      ci: ahp.ci,
-      cr: ahp.cr,
+      lambdaMax: r.lambdaMax,
+      ci: r.ci,
+      cr: r.cr,
     };
   });
 
   const global: { name: string; globalWeight: number }[] = [];
-  let gi = 0;
-  for (const c of template.criteria) {
+  let globalTotal = 0;
+  for (const c of t.criteria) {
     for (const s of c.subcriteria) {
-      global.push({ name: s.name, globalWeight: globalWeights[gi] ?? 0 });
-      gi += 1;
+      const g = Number(s.globalWeight ?? 0);
+      global.push({ name: s.name, globalWeight: g });
+      globalTotal += g;
     }
   }
-  const globalTotal = global.reduce((a, b) => a + b.globalWeight, 0);
 
   return {
-    version: template.version,
-    createdAt: template.createdAt.toISOString(),
+    version: t.version,
+    createdAt: t.createdAt.toISOString(),
     criteria,
     global,
     globalTotal,

@@ -113,7 +113,7 @@ export async function calculateScore(assessmentId: number): Promise<number> {
 
   let total = 0;
   for (const d of details) {
-    total += d.score * Number(d.kpiSubcriteria.ahpWeight);
+    total += d.score * Number(d.kpiSubcriteria.globalWeight ?? 0);
   }
 
   await prisma.assessment.update({

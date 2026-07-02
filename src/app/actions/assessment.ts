@@ -281,9 +281,9 @@ async function persistScores(assessmentId: number, scores: ScoreInput[]) {
   const subIds = scores.map((s) => s.subcriteriaId);
   const subs = await prisma.kpiSubcriteria.findMany({
     where: { id: { in: subIds } },
-    select: { id: true, ahpWeight: true },
+    select: { id: true, globalWeight: true },
   });
-  const weightMap = new Map(subs.map((s) => [s.id, Number(s.ahpWeight)]));
+  const weightMap = new Map(subs.map((s) => [s.id, Number(s.globalWeight ?? 0)]));
 
   // Map detail yang sudah ada (tidak ada unique komposit di schema).
   const existing = await prisma.assessmentDetail.findMany({
@@ -493,7 +493,7 @@ async function buildResultDetail(
         criteriaName: d.kpiSubcriteria.criteria.name,
         subName: d.kpiSubcriteria.name,
         score: d.score,
-        ahpWeight: Number(d.kpiSubcriteria.ahpWeight),
+        ahpWeight: Number(d.kpiSubcriteria.globalWeight ?? 0),
         weighted: Number(d.weightedScore),
       }));
     return {

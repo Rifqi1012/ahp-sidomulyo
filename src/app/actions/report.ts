@@ -297,12 +297,12 @@ export async function getAssessmentDetail(
 
   const criteria: PdfCriteria[] = template.criteria.map((c) => {
     const criteriaShare = c.subcriteria.reduce(
-      (s, x) => s + Number(x.ahpWeight),
+      (s, x) => s + Number(x.globalWeight ?? 0),
       0,
     );
     let contribution = 0;
     const subcriteria: PdfSub[] = c.subcriteria.map((s) => {
-      const ahp = Number(s.ahpWeight);
+      const ahp = Number(s.globalWeight ?? 0); // bobot global untuk skoring
       const s1 = scoreOf(p1, s.id);
       const s2 = scoreOf(p2, s.id);
       const blended =
@@ -313,7 +313,7 @@ export async function getAssessmentDetail(
       return {
         name: s.name,
         description: s.description ?? "",
-        withinPercent: Number(s.bobotPersen),
+        withinPercent: Number(s.ahpWeight ?? 0) * 100,
         globalPercent: ahp * 100,
         p1Score: s1,
         p2Score: s2,
@@ -636,7 +636,7 @@ export async function getRekapData(filter: RekapFilter): Promise<RekapRow[]> {
       >();
       for (const d of p1?.details ?? []) {
         subMap.set(d.kpiSubcriteriaId, {
-          ahp: Number(d.kpiSubcriteria.ahpWeight),
+          ahp: Number(d.kpiSubcriteria.globalWeight ?? 0),
           criteriaName: d.kpiSubcriteria.criteria.name,
           order: d.kpiSubcriteria.criteria.orderNumber,
           s1: d.score,
@@ -648,7 +648,7 @@ export async function getRekapData(filter: RekapFilter): Promise<RekapRow[]> {
         if (e) e.s2 = d.score;
         else
           subMap.set(d.kpiSubcriteriaId, {
-            ahp: Number(d.kpiSubcriteria.ahpWeight),
+            ahp: Number(d.kpiSubcriteria.globalWeight ?? 0),
             criteriaName: d.kpiSubcriteria.criteria.name,
             order: d.kpiSubcriteria.criteria.orderNumber,
             s1: null,

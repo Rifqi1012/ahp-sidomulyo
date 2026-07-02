@@ -57,6 +57,67 @@ export const RANDOM_INDEX: Record<number, number> = {
   10: 1.49,
 };
 
+export type AhpMatrixResult = {
+  weights: number[];
+  lambdaMax: number;
+  ci: number;
+  cr: number;
+  isConsistent: boolean;
+};
+
+/**
+ * AHP dari matriks perbandingan berpasangan n×n.
+ * Priority vector via normalisasi kolom + rata-rata baris; λmax, CI, CR.
+ * n ≤ 2 → CR = 0 (konsisten).
+ */
+export function calculateAhpFromMatrix(matrix: number[][]): AhpMatrixResult {
+  const n = matrix.length;
+  if (n === 0)
+    return { weights: [], lambdaMax: 0, ci: 0, cr: 0, isConsistent: true };
+  if (n === 1)
+    return { weights: [1], lambdaMax: 1, ci: 0, cr: 0, isConsistent: true };
+
+  const colSums = Array.from({ length: n }, (_, j) =>
+    matrix.reduce((s, row) => s + row[j], 0),
+  );
+  let weights = matrix.map(
+    (row) =>
+      row.reduce((s, v, j) => s + (colSums[j] > 0 ? v / colSums[j] : 0), 0) / n,
+  );
+  const wsum = weights.reduce((a, b) => a + b, 0);
+  if (wsum > 0) weights = weights.map((w) => w / wsum);
+
+  const weightedSum = matrix.map((row) =>
+    row.reduce((s, v, j) => s + v * weights[j], 0),
+  );
+  const lambdas = weightedSum.map((ws, i) =>
+    weights[i] > 0 ? ws / weights[i] : n,
+  );
+  const lambdaMax = lambdas.reduce((a, b) => a + b, 0) / n;
+  const ci = Math.max(0, (lambdaMax - n) / (n - 1));
+  const ri = RANDOM_INDEX[n] ?? 1.49;
+  const cr = n <= 2 ? 0 : ri > 0 ? ci / ri : 0;
+  return { weights, lambdaMax, ci, cr, isConsistent: cr <= 0.1 };
+}
+
+/**
+ * Bobot global tiap subkriteria: ahpWeight (per-kriteria) dinormalisasi
+ * terhadap total seluruh ahpWeight (kriteria berbobot setara). Total = 1.0.
+ * Map subId → globalWeight.
+ */
+export function calculateGlobalWeights(
+  criteria: { subcriteria: { id: number; ahpWeight: number }[] }[],
+): Map<number, number> {
+  let total = 0;
+  for (const c of criteria)
+    for (const s of c.subcriteria) total += s.ahpWeight > 0 ? s.ahpWeight : 0;
+  const map = new Map<number, number>();
+  for (const c of criteria)
+    for (const s of c.subcriteria)
+      map.set(s.id, total > 0 ? (s.ahpWeight > 0 ? s.ahpWeight : 0) / total : 0);
+  return map;
+}
+
 export type AhpFromBobotResult = {
   weights: { id: number; ahpWeight: number }[];
   matrix: number[][];
@@ -152,27 +213,3 @@ export function calculateGlobalAhpWeights(
   return subBobots.map((b) => (b > 0 ? b : 0) / total);
 }
 
-export type CriteriaForGlobal = {
-  bobotPersen: number;
-  subcriteria: { bobotPersen: number }[];
-};
-
-/**
- * Hitung bobot global tiap subkriteria:
- *   globalWeight[i][j] = ahpWeight_kriteria[i] × ahpWeight_subkriteria[j]
- * Total seluruh nilai = 1.0.
- */
-export function calculateGlobalWeights(
-  criteria: CriteriaForGlobal[],
-): number[][] {
-  const criteriaWeights = calculateAhpWeights(
-    criteria.map((c) => c.bobotPersen),
-  );
-
-  return criteria.map((c, i) => {
-    const subWeights = calculateAhpWeights(
-      c.subcriteria.map((s) => s.bobotPersen),
-    );
-    return subWeights.map((sw) => criteriaWeights[i] * sw);
-  });
-}
