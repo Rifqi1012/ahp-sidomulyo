@@ -1,4 +1,4 @@
-import type { RoleType, KpiType, Prisma } from "@prisma/client";
+import type { RoleType, KpiType } from "@prisma/client";
 
 import prisma from "@/lib/prisma";
 
@@ -29,57 +29,6 @@ export type AssessableUser = {
 /** KPI Atas untuk KC & KD, KPI Bawah untuk Karyawan. */
 export function getKpiTypeForAssessee(role: RoleType): KpiType {
   return role === "karyawan" ? "bawah" : "atas";
-}
-
-/**
- * Bobot penilai (%) berdasarkan matriks penilaian:
- *   HRD→KC/KD Pusat = 100, HRD→KD Cabang = 60, KC→KD Cabang = 40,
- *   KC→Karyawan = 60, KD→Karyawan = 40.
- */
-export function getWeightPct(
-  assessorRole: RoleType,
-  assesseeRole: RoleType,
-  assesseeBranchIsPusat: boolean,
-): number {
-  if (assessorRole === "hrd") {
-    if (assesseeRole === "kepala_cabang") return 100;
-    if (assesseeRole === "kepala_divisi") return assesseeBranchIsPusat ? 100 : 60;
-  }
-  if (assessorRole === "kepala_cabang") {
-    if (assesseeRole === "kepala_divisi") return 40;
-    if (assesseeRole === "karyawan") return 60;
-  }
-  if (assessorRole === "kepala_divisi") {
-    if (assesseeRole === "karyawan") return 40;
-  }
-  return 0;
-}
-
-export type AssessorSlot = { label: string; weightPct: number };
-
-/** Daftar penilai yang diharapkan untuk seorang assessee. */
-export function expectedSlots(
-  assesseeRole: RoleType,
-  branchIsPusat: boolean,
-): AssessorSlot[] {
-  if (assesseeRole === "kepala_cabang") {
-    return [{ label: "HRD", weightPct: 100 }];
-  }
-  if (assesseeRole === "kepala_divisi") {
-    return branchIsPusat
-      ? [{ label: "HRD", weightPct: 100 }]
-      : [
-          { label: "HRD", weightPct: 60 },
-          { label: "Kepala Cabang", weightPct: 40 },
-        ];
-  }
-  if (assesseeRole === "karyawan") {
-    return [
-      { label: "Kepala Cabang", weightPct: 60 },
-      { label: "Kepala Divisi", weightPct: 40 },
-    ];
-  }
-  return [];
 }
 
 export type PerformanceCategory =
@@ -172,36 +121,20 @@ export async function getAssessableUsers(
   assessor: AssessorContext,
   periodId: number,
 ): Promise<AssessableUser[]> {
-  let whereClause: Prisma.UserWhereInput;
-
-  if (assessor.role === "hrd") {
-    whereClause = {
-      isActive: true,
-      role: { in: ["kepala_cabang", "kepala_divisi"] },
-    };
-  } else if (assessor.role === "kepala_cabang") {
-    whereClause = {
-      isActive: true,
-      branchId: assessor.branchId ?? -1,
-      role: { in: ["kepala_divisi", "karyawan"] },
-    };
-  } else if (assessor.role === "kepala_divisi") {
-    whereClause = {
-      isActive: true,
-      branchId: assessor.branchId ?? -1,
-      departmentId: assessor.departmentId ?? -1,
-      role: "karyawan",
-    };
-  } else {
-    return [];
-  }
-
-  const targets = await prisma.user.findMany({
-    where: whereClause,
-    include: { branch: true, department: true, jabatan: true },
-    orderBy: { name: "asc" },
+  // Assessee ditentukan manual oleh HRD via AssessmentAssignment: user hanya
+  // menilai orang yang ditugaskan padanya (sebagai penilai 1 atau 2).
+  const assignments = await prisma.assessmentAssignment.findMany({
+    where: {
+      periodId,
+      OR: [{ assessor1Id: assessor.id }, { assessor2Id: assessor.id }],
+    },
+    include: {
+      assessee: { include: { branch: true, department: true, jabatan: true } },
+    },
+    orderBy: { assessee: { name: "asc" } },
   });
-  const ids = targets.map((t) => t.id);
+  const ids = assignments.map((a) => a.assesseeId);
+  if (ids.length === 0) return [];
 
   const [assessments, finals] = await Promise.all([
     prisma.assessment.findMany({
@@ -215,7 +148,8 @@ export async function getAssessableUsers(
   const byAssessee = new Map(assessments.map((a) => [a.assesseeId, a]));
   const finalByAssessee = new Map(finals.map((f) => [f.assesseeId, f]));
 
-  return targets.map((t) => {
+  return assignments.map((asg) => {
+    const t = asg.assessee;
     const a = byAssessee.get(t.id);
     const f = finalByAssessee.get(t.id);
     const status: AssessmentStatusKind = !a
@@ -234,4 +168,40 @@ export async function getAssessableUsers(
       finalScore: f?.finalScore != null ? Number(f.finalScore) : null,
     };
   });
+}
+
+export type AssignmentSlot = {
+  assessorId: number;
+  label: string;
+  weightPct: number;
+};
+
+/** Slot penilai yang ditugaskan HRD untuk seorang assessee (urut penilai 1,2). */
+export async function getAssignmentSlots(
+  periodId: number,
+  assesseeId: number,
+): Promise<AssignmentSlot[]> {
+  const asg = await prisma.assessmentAssignment.findUnique({
+    where: { periodId_assesseeId: { periodId, assesseeId } },
+    include: {
+      assessor1: { include: { jabatan: true } },
+      assessor2: { include: { jabatan: true } },
+    },
+  });
+  if (!asg) return [];
+  const slots: AssignmentSlot[] = [
+    {
+      assessorId: asg.assessor1Id,
+      label: asg.assessor1.jabatan?.name ?? asg.assessor1.name,
+      weightPct: asg.weight1Pct,
+    },
+  ];
+  if (asg.assessor2 && asg.assessor2Id && asg.weight2Pct != null) {
+    slots.push({
+      assessorId: asg.assessor2Id,
+      label: asg.assessor2.jabatan?.name ?? asg.assessor2.name,
+      weightPct: asg.weight2Pct,
+    });
+  }
+  return slots;
 }

@@ -82,6 +82,11 @@ model User {
   finalScores         AssessmentFinalScore[]
   kpiVersions         KpiTemplate[]
 
+  assignmentsAsAssessee  AssessmentAssignment[] @relation("AssignmentAssessee")
+  assignmentsAsAssessor1 AssessmentAssignment[] @relation("AssignmentAssessor1")
+  assignmentsAsAssessor2 AssessmentAssignment[] @relation("AssignmentAssessor2")
+  assignmentsCreated     AssessmentAssignment[] @relation("AssignmentCreator")
+
   @@map("users")
 }
 
@@ -107,6 +112,7 @@ model Period {
 
   assessments Assessment[]
   finalScores AssessmentFinalScore[]
+  assignments AssessmentAssignment[]
 
   @@map("periods")
 }
@@ -186,6 +192,29 @@ model AhpComparison {
 
   @@unique([kpiCriteriaId, subcriteriaIId, subcriteriaJId])
   @@map("ahp_comparisons")
+}
+
+model AssessmentAssignment {
+  id          Int      @id @default(autoincrement())
+  periodId    Int      @map("period_id")
+  assesseeId  Int      @map("assessee_id")
+  assessor1Id Int      @map("assessor1_id")
+  assessor2Id Int?     @map("assessor2_id")
+  weight1Pct  Int      @map("weight1_pct")
+  weight2Pct  Int?     @map("weight2_pct")
+  kpiType     KpiType  @map("kpi_type")
+  createdBy   Int      @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  period    Period @relation(fields: [periodId], references: [id])
+  assessee  User   @relation("AssignmentAssessee", fields: [assesseeId], references: [id])
+  assessor1 User   @relation("AssignmentAssessor1", fields: [assessor1Id], references: [id])
+  assessor2 User?  @relation("AssignmentAssessor2", fields: [assessor2Id], references: [id])
+  creator   User   @relation("AssignmentCreator", fields: [createdBy], references: [id])
+
+  @@unique([periodId, assesseeId])
+  @@map("assessment_assignments")
 }
 
 model Assessment {

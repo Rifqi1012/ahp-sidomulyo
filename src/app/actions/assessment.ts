@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { RoleType } from "@prisma/client";
 
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth-guard";
@@ -9,9 +8,7 @@ import {
   calculateScore,
   calculateFinalScore,
   getAssessableUsers,
-  getKpiTypeForAssessee,
-  getWeightPct,
-  expectedSlots,
+  getAssignmentSlots,
   categoryOf,
   type AssessableUser,
 } from "@/lib/assessmentService";
@@ -28,40 +25,6 @@ function deadlinePassed(deadline: Date): boolean {
 
 async function getActivePeriod() {
   return prisma.period.findFirst({ where: { status: "ACTIVE" } });
-}
-
-type SessionAssessor = {
-  id: number;
-  role: RoleType;
-  branchId: number | null;
-  departmentId: number | null;
-};
-
-function canAssess(
-  assessor: SessionAssessor,
-  assessee: {
-    role: RoleType;
-    branchId: number | null;
-    departmentId: number | null;
-  },
-): boolean {
-  if (assessor.role === "hrd") {
-    return ["kepala_cabang", "kepala_divisi"].includes(assessee.role);
-  }
-  if (assessor.role === "kepala_cabang") {
-    return (
-      assessee.branchId === assessor.branchId &&
-      ["kepala_divisi", "karyawan"].includes(assessee.role)
-    );
-  }
-  if (assessor.role === "kepala_divisi") {
-    return (
-      assessee.branchId === assessor.branchId &&
-      assessee.departmentId === assessor.departmentId &&
-      assessee.role === "karyawan"
-    );
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,26 +106,21 @@ export async function getOrCreateAssessment(
   });
   if (!assessee) return { ok: false, error: "Karyawan tidak ditemukan." };
 
-  const assessor: SessionAssessor = {
-    id: user.id,
-    role: user.role,
-    branchId: user.branchId,
-    departmentId: user.departmentId,
-  };
-  if (!canAssess(assessor, assessee)) {
-    return { ok: false, error: "Anda tidak berhak menilai karyawan ini." };
+  // Penugasan ditentukan HRD di halaman Atur Penilaian.
+  const assignment = await prisma.assessmentAssignment.findUnique({
+    where: {
+      periodId_assesseeId: { periodId: period.id, assesseeId },
+    },
+  });
+  let weightPct = 0;
+  if (assignment?.assessor1Id === user.id) weightPct = assignment.weight1Pct;
+  else if (assignment?.assessor2Id === user.id && assignment.weight2Pct != null)
+    weightPct = assignment.weight2Pct;
+  if (!assignment || weightPct <= 0) {
+    return { ok: false, error: "Anda tidak ditugaskan menilai karyawan ini." };
   }
 
-  const weightPct = getWeightPct(
-    user.role,
-    assessee.role,
-    assessee.branch?.isPusat ?? false,
-  );
-  if (weightPct <= 0) {
-    return { ok: false, error: "Bobot penilaian tidak valid." };
-  }
-
-  const kpiType = getKpiTypeForAssessee(assessee.role);
+  const kpiType = assignment.kpiType;
   const kpiTemplateId =
     kpiType === "atas" ? period.kpiAtasId : period.kpiBawahId;
   if (!kpiTemplateId) {
@@ -450,7 +408,7 @@ async function buildResultDetail(
   ]);
   if (!assessee || !period) return null;
 
-  const slots = expectedSlots(assessee.role, assessee.branch?.isPusat ?? false);
+  const slots = await getAssignmentSlots(periodId, assesseeId);
 
   const assessments = await prisma.assessment.findMany({
     where: { periodId, assesseeId },
@@ -460,7 +418,7 @@ async function buildResultDetail(
       },
     },
   });
-  const byWeight = new Map(assessments.map((a) => [a.weightPct, a]));
+  const byAssessor = new Map(assessments.map((a) => [a.assessorId, a]));
 
   const fs = await prisma.assessmentFinalScore.findUnique({
     where: { periodId_assesseeId: { periodId, assesseeId } },
@@ -468,7 +426,7 @@ async function buildResultDetail(
   const finalScore = fs?.finalScore != null ? Number(fs.finalScore) : null;
 
   const breakdown: AssessorBreakdown[] = slots.map((slot) => {
-    const a = byWeight.get(slot.weightPct);
+    const a = byAssessor.get(slot.assessorId);
     const submitted = a?.status === "SUBMITTED";
     if (!a || !submitted) {
       return {
