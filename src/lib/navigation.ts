@@ -10,6 +10,7 @@ import {
   ClipboardList,
   ClipboardCheck,
   FileText,
+  Trophy,
   History,
   FileCheck2,
 } from "lucide-react";
@@ -36,22 +37,26 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { label: "Data Karyawan", href: "/hrd/karyawan", icon: Users },
     { label: "Penilaian", href: "/hrd/penilaian", icon: ClipboardList },
     { label: "Laporan", href: "/hrd/laporan", icon: FileText },
+    { label: "Peringkat", href: "/hrd/ranking", icon: Trophy },
     { label: "History", href: "/hrd/history", icon: History },
   ],
   direktur: [
     { label: "Laporan Kinerja", href: "/direktur/laporan", icon: FileText },
+    { label: "Peringkat", href: "/direktur/ranking", icon: Trophy },
     { label: "History Penilaian", href: "/direktur/history", icon: History },
   ],
   kepala_cabang: [
     { label: "Penilaian", href: "/kepala-cabang/penilaian", icon: ClipboardList },
     { label: "Data Karyawan", href: "/kepala-cabang/karyawan", icon: Users },
     { label: "Laporan", href: "/kepala-cabang/laporan", icon: FileText },
+    { label: "Peringkat", href: "/kepala-cabang/ranking", icon: Trophy },
     { label: "Hasil Penilaian Saya", href: "/kepala-cabang/hasil-saya", icon: FileCheck2 },
   ],
   kepala_divisi: [
     { label: "Penilaian", href: "/kepala-divisi/penilaian", icon: ClipboardList },
     { label: "Data Karyawan", href: "/kepala-divisi/karyawan", icon: Users },
     { label: "Laporan", href: "/kepala-divisi/laporan", icon: FileText },
+    { label: "Peringkat", href: "/kepala-divisi/ranking", icon: Trophy },
     { label: "Hasil Penilaian Saya", href: "/kepala-divisi/hasil-saya", icon: FileCheck2 },
   ],
   karyawan: [

@@ -692,6 +692,97 @@ export async function getRekapData(filter: RekapFilter): Promise<RekapRow[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Perankingan (satu periode)
+// ---------------------------------------------------------------------------
+
+export type RankingRow = {
+  rank: number | null;
+  userId: number;
+  finalScoreId: number | null;
+  name: string;
+  jabatan: string;
+  cabang: string;
+  departemen: string;
+  finalScore: number | null;
+  category: string | null;
+  isComplete: boolean;
+};
+
+export type RankingFilter = {
+  type: KpiType;
+  periodId: number;
+  branchId?: number;
+  search?: string;
+};
+
+export async function getRanking(
+  filter: RankingFilter,
+): Promise<RankingRow[]> {
+  const user = await getSessionUser();
+  if (!user || !filter.periodId) return [];
+
+  const roles: Prisma.UserWhereInput["role"] =
+    filter.type === "atas"
+      ? { in: ["kepala_cabang", "kepala_divisi"] }
+      : "karyawan";
+
+  const where: Prisma.UserWhereInput = { role: roles };
+  if (user.role === "hrd" || user.role === "direktur") {
+    if (filter.branchId) where.branchId = filter.branchId;
+  } else if (user.role === "kepala_cabang") {
+    where.branchId = user.branchId ?? -1;
+  } else if (user.role === "kepala_divisi") {
+    if (filter.type === "atas") return [];
+    where.branchId = user.branchId ?? -1;
+    where.departmentId = user.departmentId ?? -1;
+  } else {
+    return [];
+  }
+  if (filter.search) where.name = { contains: filter.search };
+
+  const assessees = await prisma.user.findMany({
+    where,
+    include: { jabatan: true, branch: true, department: true },
+  });
+  if (assessees.length === 0) return [];
+
+  const ids = assessees.map((a) => a.id);
+  const finals = await prisma.assessmentFinalScore.findMany({
+    where: { periodId: filter.periodId, assesseeId: { in: ids } },
+  });
+  const finalMap = new Map(finals.map((f) => [f.assesseeId, f]));
+
+  const rows = assessees.map((emp) => {
+    const f = finalMap.get(emp.id);
+    const complete = (f?.isComplete ?? false) && f?.finalScore != null;
+    const finalScore = complete ? Number(f!.finalScore) : null;
+    return {
+      userId: emp.id,
+      finalScoreId: f?.id ?? null,
+      name: emp.name,
+      jabatan: emp.jabatan?.name ?? "-",
+      cabang: emp.branch?.name ?? "-",
+      departemen: emp.department?.name ?? "-",
+      finalScore,
+      category: finalScore != null ? categoryOf(finalScore) : null,
+      isComplete: complete,
+    };
+  });
+
+  // Yang lengkap diurutkan menurun & diberi peringkat; sisanya di bawah.
+  const ranked = rows
+    .filter((r) => r.finalScore != null)
+    .sort((a, b) => b.finalScore! - a.finalScore!)
+    .map((r, i) => ({ ...r, rank: i + 1 }));
+  const unranked = rows
+    .filter((r) => r.finalScore == null)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((r) => ({ ...r, rank: null }));
+
+  return [...ranked, ...unranked];
+}
+
+// ---------------------------------------------------------------------------
 // Target hasil periode AKTIF untuk KC/KD/Karyawan
 // ---------------------------------------------------------------------------
 

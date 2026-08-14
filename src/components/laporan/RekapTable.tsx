@@ -39,6 +39,19 @@ export function RekapTable({
   );
   const allSelected = data.length > 0 && data.every((r) => selected.has(r.userId));
 
+  // Peringkat berdasar nilai akhir periode terbaru yang lengkap.
+  const repScore = (row: RekapRow): number | null => {
+    const rep = [...row.periodeScores]
+      .reverse()
+      .find((p) => p.finalScore != null && p.isComplete);
+    return rep?.finalScore ?? null;
+  };
+  const rankMap = new Map<number, number>();
+  [...data]
+    .filter((r) => repScore(r) != null)
+    .sort((a, b) => repScore(b)! - repScore(a)!)
+    .forEach((r, i) => rankMap.set(r.userId, i + 1));
+
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full border-collapse text-sm">
@@ -54,6 +67,9 @@ export function RekapTable({
             </th>
             <th rowSpan={2} className="border border-slate-300 px-3 py-2 text-left">
               No
+            </th>
+            <th rowSpan={2} className="border border-slate-300 px-3 py-2 text-center">
+              Peringkat
             </th>
             <th rowSpan={2} className="border border-slate-300 px-3 py-2 text-left">
               Nama
@@ -101,7 +117,7 @@ export function RekapTable({
             <tr>
               <td
                 colSpan={
-                  4 +
+                  5 +
                   periods.reduce(
                     (s, p) => s + (critByPeriod.get(p.id)?.length ?? 0) + 1,
                     0,
@@ -139,6 +155,9 @@ export function RekapTable({
                   </td>
                   <td className="border border-slate-200 px-3 py-2 text-slate-500">
                     {idx + 1}
+                  </td>
+                  <td className="border border-slate-200 px-3 py-2 text-center font-semibold text-slate-800">
+                    {rankMap.get(row.userId) ?? "—"}
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-medium text-slate-900">
                     {row.name}
